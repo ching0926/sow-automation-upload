@@ -1,0 +1,107 @@
+<!doctype html>
+<html lang="zh-Hant">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>eCloudvalley Solution Knowledge</title>
+<link rel="stylesheet" href="css/style.css" />
+</head>
+<body>
+<div id="app">
+
+  <header class="topbar">
+    <div class="topbar-left">
+      <div class="logo">
+        <span class="logo-mark">☁️</span>
+        <div class="logo-text">
+          <div class="logo-name" data-i18n="appName">eCloudvalley</div>
+          <div class="logo-sub" data-i18n="appSub">Solution Knowledge</div>
+        </div>
+      </div>
+      <nav class="topnav">
+        <button class="topnav-btn active" data-view="list" data-i18n="nav_search">案例搜尋</button>
+        <button class="topnav-btn" data-view="favorites" data-i18n="nav_favorites">收藏列表</button>
+        <button class="topnav-btn" data-view="recent" data-i18n="nav_recent">最近瀏覽</button>
+      </nav>
+    </div>
+
+    <div class="topbar-search">
+      <input type="text" id="search-input" data-i18n-placeholder="search_placeholder" placeholder="搜尋案例、產業、技術成果關鍵字..." />
+      <span class="search-icon">🔍</span>
+    </div>
+
+    <div class="topbar-right">
+      <button class="lang-btn" id="lang-btn" data-i18n="lang_switch">English</button>
+      <label class="role-switcher" title="切換角色（Demo）">
+        <select id="role-select">
+          <option value="customer">客戶</option>
+          <option value="pm" selected>PM</option>
+          <option value="sa">SA</option>
+        </select>
+      </label>
+      <div class="user-chip">
+        <span class="user-avatar">👩‍💼</span>
+        <div class="user-info">
+          <div class="user-name" id="user-name">Christine Wang</div>
+          <div class="user-role" id="user-role">PM</div>
+        </div>
+      </div>
+    </div>
+  </header>
+
+  <div class="filterbar" id="filterbar">
+    <div class="filter-groups" id="filter-groups"><!-- rendered by app.js --></div>
+    <div class="filter-actions">
+      <button class="btn btn-ghost" id="filter-clear" data-i18n="filter_clear">重設 Clear All</button>
+      <button class="btn btn-primary" id="filter-apply" data-i18n="filter_apply">確定篩選 Apply</button>
+    </div>
+  </div>
+
+  <div class="content-row">
+    <main id="main-content">
+
+      <section id="view-list" class="view">
+        <div class="list-toolbar">
+          <div class="result-count" id="result-count">共 16 筆案例</div>
+          <div class="list-toolbar-right">
+            <div class="sort-control">
+              <span data-i18n="sort_label">排序</span>：
+              <select id="sort-select">
+                <option value="new" data-i18n="sort_new">新到舊</option>
+                <option value="old" data-i18n="sort_old">舊到新</option>
+              </select>
+            </div>
+          </div>
+        </div>
+        <div class="case-grid" id="case-grid"><!-- rendered by app.js --></div>
+        <div class="pagination" id="pagination"><!-- rendered by app.js --></div>
+      </section>
+
+      <section id="view-favorites" class="view hidden">
+        <div class="list-toolbar">
+          <div class="result-count" id="favorites-count"></div>
+        </div>
+        <div class="case-grid" id="favorites-grid"></div>
+        <div class="empty-state hidden" id="favorites-empty" data-i18n="empty_favorites"></div>
+      </section>
+
+      <section id="view-recent" class="view hidden">
+        <div class="list-toolbar">
+          <div class="result-count" id="recent-count"></div>
+        </div>
+        <div class="case-grid" id="recent-grid"></div>
+        <div class="empty-state hidden" id="recent-empty" data-i18n="empty_recent"></div>
+      </section>
+
+    </main>
+
+    <aside class="preview-drawer hidden" id="preview-drawer"><!-- rendered by app.js --></aside>
+  </div>
+
+</div>
+
+<script src="js/i18n.js"></script>
+<script src="js/data.js"></script>
+<script src="js/app.js"></script>
+</body>
+</html>
