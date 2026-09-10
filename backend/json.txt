@@ -1,0 +1,66 @@
+#bedrock_service.py用來限制AI產出的格式
+
+SOW_ANALYSIS_TOOL = {
+    "name": "submit_sow_analysis",
+    "description": "提交 SOW 分析結果，包含標準化標籤與結構化專案細節。",
+    "input_schema": {
+        "type": "object",
+        "properties": {
+            "metadata": {
+                "type": "object",
+                "properties": {
+                    "service_domain": {"type": "array", "items": {"type": "string"}},
+                    "industry": {"type": "string"},
+                    "use_case": {"type": "string"},
+                    "technology_platform": {"type": "array", "items": {"type": "string"}}
+                },
+                "required": ["service_domain", "industry", "use_case", "technology_platform"]
+            },
+            # 拆細：對應前端「客戶脈絡與價值」
+            "customer_context": {
+                "type": "object",
+                "properties": {
+                    "industry_background": {"type": "string"},
+                    "challenge": {"type": "string"},
+                    "solution": {"type": "string"},
+                    "kpis": {
+                        "type": "array",
+                        "items": {
+                            "type": "object",
+                            "properties": {
+                                "icon": {"type": "string"},
+                                "value": {"type": "string"},
+                                "label": {"type": "string"}
+                            }
+                        }
+                    }
+                },
+                "required": ["industry_background", "challenge", "solution", "kpis"]
+            },
+            # 拆細：對應前端「專案規劃與交付」
+            "project_planning": {
+                "type": "object",
+                "properties": {
+                    "owner": {"type": "string"},
+                    "team_size": {"type": "integer"},
+                    "period": {"type": "string"},
+                    "man_days": {"type": "integer"},
+                    "total_cost": {"type": "string"},
+                    "deliverables": {"type": "array", "items": {"type": "string"}}
+                },
+                "required": ["owner", "team_size", "period", "man_days", "total_cost", "deliverables"]
+            },
+            # 拆細：對應前端「技術設計與架構」
+            "technical_design": {
+                "type": "object",
+                "properties": {
+                    "core_functions": {"type": "array", "items": {"type": "string"}},
+                    "architecture_nodes": {"type": "array", "items": {"type": "string"}},
+                    "tech_stack": {"type": "array", "items": {"type": "string"}}
+                },
+                "required": ["core_functions", "architecture_nodes", "tech_stack"]
+            }
+        },
+        "required": ["metadata", "customer_context", "project_planning", "technical_design"]
+    }
+}

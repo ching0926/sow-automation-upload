@@ -46,11 +46,17 @@ function caseById(id) { return CASES.find(c => c.id === Number(id)); }
 
 function tagClass(color) { return `tag tag-${color}`; }
 
+// 真實資料的 serviceCategory/useCase/skills 是 tag_name 原文（非 mock 的 code），
+// LABELS 字典查不到時就沒有預先定義的顏色，所以每個維度給一個固定的 fallback 色。
+function tagColorFor(dict, code, fallback) {
+  return (LABELS[dict][code] && LABELS[dict][code].color) || fallback;
+}
+
 function getFilterOptions() {
   return {
     industry: [...new Set(CASES.map(c => c.industry))],
-    service: [...new Set(CASES.map(c => c.serviceCategory))],
-    usecase: [...new Set(CASES.map(c => c.useCase))],
+    service: [...new Set(CASES.flatMap(c => c.serviceCategory))],
+    usecase: [...new Set(CASES.flatMap(c => c.useCase))],
     skill: [...new Set(CASES.flatMap(c => c.skills))],
   };
 }
@@ -65,8 +71,8 @@ function optionLabel(dim, code) {
 
 function matchesFilters(c, f) {
   if (f.industry.length && !f.industry.includes(c.industry)) return false;
-  if (f.service.length && !f.service.includes(c.serviceCategory)) return false;
-  if (f.usecase.length && !f.usecase.includes(c.useCase)) return false;
+  if (f.service.length && !f.service.some(s => c.serviceCategory.includes(s))) return false;
+  if (f.usecase.length && !f.usecase.some(s => c.useCase.includes(s))) return false;
   if (f.skill.length && !f.skill.some(s => c.skills.includes(s))) return false;
   return true;
 }
@@ -133,11 +139,15 @@ function renderFilterBar() {
 }
 
 // ---------- case card ----------
+function caseTagsHtml(c) {
+  const serviceTags = c.serviceCategory.map(s => `<span class="${tagClass(tagColorFor('service', s, 'purple'))}">${L('service', s, state.lang)}</span>`).join('');
+  const usecaseTags = c.useCase.map(s => `<span class="${tagClass(tagColorFor('usecase', s, 'amber'))}">${L('usecase', s, state.lang)}</span>`).join('');
+  const skillTags = c.skills.map(s => `<span class="${tagClass(tagColorFor('skill', s, 'blue'))}">${L('skill', s, state.lang)}</span>`).join('');
+  return serviceTags + usecaseTags + skillTags;
+}
+
 function renderCard(c) {
   const fav = state.favorites.has(c.id);
-  const svc = LABELS.service[c.serviceCategory];
-  const uc = LABELS.usecase[c.useCase];
-  const skillTags = c.skills.map(s => `<span class="${tagClass(LABELS.skill[s].color)}">${L('skill', s, state.lang)}</span>`).join('');
   const selectedCls = state.previewId === c.id ? 'selected' : '';
   return `
     <div class="case-card ${selectedCls}" data-card-id="${c.id}">
@@ -149,9 +159,7 @@ function renderCard(c) {
       <div class="card-title">${c.title[state.lang]}</div>
       <div class="card-desc">${c.description[state.lang]}</div>
       <div class="card-tags">
-        <span class="${tagClass(svc.color)}">${svc[state.lang]}</span>
-        <span class="${tagClass(uc.color)}">${uc[state.lang]}</span>
-        ${skillTags}
+        ${caseTagsHtml(c)}
       </div>
       <div class="card-date">${c.date}</div>
     </div>`;
@@ -236,20 +244,23 @@ function sectionsTabA(c) {
 
 function sectionsTabB(c) {
   const b = c.detail.B;
-  return [
+  const statusRow = b.status
+    ? `<div class="overview-item">🚦 <span>${t(state.lang, 'b_status')}</span><strong>${LABELS.status[b.status] ? LABELS.status[b.status][state.lang] : b.status}</strong></div>`
+    : '';
+  const sections = [
     {
       id: 'sec-dri', titleKey: 'b_dri', body: `
       <div class="overview-row">
         <div class="overview-item">👤 <span>${t(state.lang, 'b_dri')}</span><strong>${b.owner}</strong></div>
         <div class="overview-item">📅 <span>${t(state.lang, 'b_period')}</span><strong>${b.period}</strong></div>
-        <div class="overview-item">🚦 <span>${t(state.lang, 'b_status')}</span><strong>${LABELS.status[b.status][state.lang]}</strong></div>
+        ${statusRow}
       </div>`,
     },
     {
       id: 'sec-team', titleKey: 'b_team', body: `
       <div class="team-row">
         <div class="team-chip">👥 ${state.lang === 'zh' ? '團隊總人數' : 'Total'} <strong>${b.teamSize} ${t(state.lang, 'b_person_unit')}</strong></div>
-        ${b.team.map(m => `<div class="team-chip">👤 ${L('role', m.role, state.lang)} <strong>${m.count}</strong></div>`).join('')}
+        ${(b.team || []).map(m => `<div class="team-chip">👤 ${L('role', m.role, state.lang)} <strong>${m.count}</strong></div>`).join('')}
       </div>`,
     },
     {
@@ -272,7 +283,9 @@ function sectionsTabB(c) {
         </div>
       </div>`,
     },
-    {
+  ];
+  if ((b.wbs || []).length) {
+    sections.push({
       id: 'sec-wbs', titleKey: 'b_wbs', body: `
       <div class="wbs-row">
         ${b.wbs.map(w => `
@@ -282,36 +295,45 @@ function sectionsTabB(c) {
             <div class="wbs-date">${w.date}</div>
           </div>`).join('')}
       </div>`,
-    },
-    {
-      id: 'sec-closing', titleKey: 'b_closing', body: `
-      <ul class="bullet-list">${b.deliverables.map(d => `<li>✔ ${L('deliverable', d, state.lang)}</li>`).join('')}</ul>`,
-    },
-  ];
+    });
+  }
+  sections.push({
+    id: 'sec-closing', titleKey: 'b_closing', body: `
+      <ul class="bullet-list">${(b.deliverables || []).map(d => `<li>✔ ${L('deliverable', d, state.lang)}</li>`).join('')}</ul>`,
+  });
+  return sections;
 }
 
 const MODULE_NODES = ['ai_portal', 'n8n_workflow', 'claude_bedrock'];
 
 function sectionsTabC(c) {
   const cc = c.detail.C;
-  const svc = LABELS.service[c.serviceCategory];
-  const uc = LABELS.usecase[c.useCase];
-  const keywords = [svc[state.lang], uc[state.lang], ...c.skills.map(s => L('skill', s, state.lang)), c.industry];
-  return [
+  const keywords = [
+    ...c.serviceCategory.map(s => L('service', s, state.lang)),
+    ...c.useCase.map(s => L('usecase', s, state.lang)),
+    ...c.skills.map(s => L('skill', s, state.lang)),
+    c.industry,
+  ];
+  const modules = cc.architecture.filter(n => MODULE_NODES.includes(n));
+  const sections = [
     {
       id: 'sec-corefunc', titleKey: 'c_corefunctions', body: `
       <div class="chip-row">${cc.coreFunctions.map(x => `<span class="tag tag-purple">${L('corefunction', x, state.lang)}</span>`).join('')}</div>`,
     },
-    {
+  ];
+  if (modules.length) {
+    sections.push({
       id: 'sec-modules', titleKey: 'c_modules', body: `
       <div class="arch-row">
-        ${cc.architecture.filter(n => MODULE_NODES.includes(n)).map(node => `
+        ${modules.map(node => `
           <div class="arch-box">
             <div class="arch-name">${L('archNode', node, state.lang)} ${state.lang === 'zh' ? '模組' : 'Module'}</div>
             <ul>${(LABELS.archNodeDetail[node] ? LABELS.archNodeDetail[node][state.lang] : []).map(d => `<li>${d}</li>`).join('')}</ul>
           </div>`).join('')}
       </div>`,
-    },
+    });
+  }
+  sections.push(
     {
       id: 'sec-techarch', titleKey: 'c_techarch', body: `
       <div class="arch-row">
@@ -322,13 +344,14 @@ function sectionsTabC(c) {
             <ul>${(LABELS.archNodeDetail[node] ? LABELS.archNodeDetail[node][state.lang] : []).map(d => `<li>${d}</li>`).join('')}</ul>
           </div>`).join('')}
       </div>
-      <div class="chip-row" style="margin-top:10px">${cc.techStack.map(x => `<span class="tag tag-blue">${LABELS.techstack[x]}</span>`).join('')}</div>`,
+      <div class="chip-row" style="margin-top:10px">${cc.techStack.map(x => `<span class="tag tag-blue">${LABELS.techstack[x] || x}</span>`).join('')}</div>`,
     },
     {
       id: 'sec-keywords', titleKey: 'c_keywords', body: `
       <div class="chip-row">${keywords.map(k => `<span class="tag tag-gray">${k}</span>`).join('')}</div>`,
     },
-  ];
+  );
+  return sections;
 }
 
 function sectionsForTab(c, tab) {
@@ -349,8 +372,6 @@ function renderPanel() {
   }
   const c = caseById(state.previewId);
   const fav = state.favorites.has(c.id);
-  const svc = LABELS.service[c.serviceCategory];
-  const uc = LABELS.usecase[c.useCase];
   const visibleSections = ROLE_SECTIONS[state.role];
   if (!visibleSections.includes(state.previewTab)) state.previewTab = visibleSections[0];
 
@@ -385,9 +406,7 @@ function renderPanel() {
         <h2 class="preview-title">${c.title[state.lang]}</h2>
         <p class="preview-desc">${c.description[state.lang]}</p>
         <div class="card-tags">
-          <span class="${tagClass(svc.color)}">${svc[state.lang]}</span>
-          <span class="${tagClass(uc.color)}">${uc[state.lang]}</span>
-          ${c.skills.map(s => `<span class="${tagClass(LABELS.skill[s].color)}">${L('skill', s, state.lang)}</span>`).join('')}
+          ${caseTagsHtml(c)}
         </div>
         <div class="preview-meta">
           <span>${t(state.lang, 'preview_uploaded')}：${c.date}</span>
@@ -428,7 +447,12 @@ function toggleFavorite(id) {
   render();
 }
 
-document.addEventListener('DOMContentLoaded', () => {
+document.addEventListener('DOMContentLoaded', async () => {
+  try {
+    await loadCases();
+  } catch (err) {
+    console.error(err);
+  }
   render();
 
   document.addEventListener('click', (e) => {
