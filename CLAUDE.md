@@ -34,7 +34,7 @@ SOW（Statement of Work）案例知識庫。流程是：SOW PDF → Bedrock（Cl
 
 | 表 | 用途 | 關鍵欄位 |
 |---|---|---|
-| `sow_document` | 一份 SOW 文件 = 一筆 | `id`, `file_name`, `s3_key`, `processing_status`, `is_latest`, `version`, `edited_by`, `approved_by`, `created_at`, `updated_at`, `review_status`, `dri_submitted_at`, `manager_reviewed_at` |
+| `sow_document` | 一份 SOW 文件 = 一筆 | `id`, `file_name`, `s3_key`, `processing_status`, `is_latest`, `version`, `edited_by`, `approved_by`, `created_at`, `updated_at`, `review_status`, `dri_submitted_at`, `manager_reviewed_at`, `job_code`（見下方「人天／成本資料來源」） |
 | `sow_structured_content` | AI 萃取出的結構化內容，`sow_id` 外鍵指向 `sow_document.id`。`version=1` 是 AI 原始萃取、不可變；主管核准審核後才會新增 `version=2`（用 `MAX(version)+1`），案例展示一律讀最新版本 | `sow_id`, `version`, `customer_context`(JSONB), `project_planning`(JSONB), `technical_design`(JSONB) |
 | `sow_review_draft` | DRI 審核中的暫存內容，`sow_id` 唯一（一個案例只有一份暫存），三個 JSONB 欄位形狀跟 `sow_structured_content` 一樣。主管畫面比對的就是「`sow_structured_content version=1`（original）vs 這張表（current）」；核准時整份升版成 `sow_structured_content` 新版本 | `sow_id`(FK, UNIQUE), `customer_context`(JSONB), `project_planning`(JSONB), `technical_design`(JSONB), `updated_at`, `updated_by` |
 | `sow_review_comment` | 審核留言記錄（append-only），DRI 在 Teams 卡片輸入的留言（由 Power Automate 呼叫 API 寫入）跟主管退回時的理由都存這裡 | `id`, `sow_id`(FK), `author_role`（`DRI`/`MANAGER`）, `author_name`, `body`, `created_at` |
@@ -59,6 +59,16 @@ technical_design:  { core_functions: [string], architecture_nodes: [string], tec
 ```
 
 `metadata`（industry / service_domain / use_case / technology_platform）**不放在 JSONB 裡**，而是正規化存在 `tag_definition` + `sow_tag_relation`。
+
+## 人天／成本資料來源（`nda_work_station_apply` 對照）
+
+`project_planning.man_days`/`total_cost` 是 AI 從 SOW 文件萃取的值，不一定準確。專案另外有一張跟案例知識庫六張表無關、給「NDA 工作站申請」流程用的表 `nda_work_station_apply`（`job_code`, `nda_check`, `dri`, `dri_manager`, `estimated_mandays`, `total_cost` 等），其中 `estimated_mandays`/`total_cost` 是用 `backend/enrich_jobcode_dri.py` 呼叫 Nebula API（`NEBULA_API_BASE`/`NEBULA_CLIENT_ID`/`NEBULA_CLIENT_SECRET`）回填的權威資料，`job_code` 對應的是 SOW 檔名裡的 JobCode。
+
+`sow_document.job_code`（`backend/migrate_add_job_code.py` 新增的欄位）是兩邊的對照鍵。`app.py` 的 `build_case()`／`common.fetch_nda_cost()` 邏輯：
+
+- 若 `sow_document.job_code` 有值，且 `nda_work_station_apply` 對得到該 `job_code`、且 `estimated_mandays`/`total_cost` 不是 `NULL` → 案例的「專案規劃與交付」人天／成本改用這個值（`common.format_number()` 格式化成千分位字串，**不含貨幣符號**，因為 `nda_work_station_apply` 沒存幣別）。
+- 否則（`job_code` 是 `NULL`、或 `nda_work_station_apply` 查無此 `job_code`、或該筆 `estimated_mandays`/`total_cost` 還是 `NULL`）→ fallback 回 `sow_structured_content.project_planning.man_days`/`total_cost`（AI 萃取值，可能帶幣別字串如 `"NT$ 1,920,000"`）。
+- **目前既有的 `sow_document` 都還沒有 `job_code`**，要靠人工比對 `nda_work_station_apply.job_code`（對照 SOW 檔名）手動填入才會生效，這個 repo 目前沒有自動比對邏輯。
 
 ## 審核 API（`backend/review.py`，prefix `/api/review`）
 
@@ -117,6 +127,9 @@ python seed_structured_content.py
 
 # 建立審核流程需要的欄位/資料表，並把既有文件回填為 PUBLISHED，可重複執行
 python migrate_review_workflow.py
+
+# 在 sow_document 新增 job_code 欄位（對照 nda_work_station_apply.job_code 用），可重複執行
+python migrate_add_job_code.py
 
 # 啟動服務（前端 + 審核頁 + API 同一個 server）
 uvicorn app:app --reload
