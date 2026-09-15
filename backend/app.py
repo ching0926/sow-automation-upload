@@ -15,8 +15,10 @@ from common import (
     bi,
     derive_description,
     derive_title,
+    fetch_nda_cost,
     fetch_structured_content,
     fetch_tags,
+    format_number,
 )
 from review import router as review_router
 
@@ -31,6 +33,18 @@ def build_case(db: Session, doc: dict) -> dict:
     technical_design = (content_row or {}).get("technical_design") or {}
 
     industry = tags["INDUSTRY"][0] if tags["INDUSTRY"] else "Unknown"
+
+    nda_cost = fetch_nda_cost(db, doc.get("job_code"))
+    man_days = (
+        format_number(nda_cost["estimated_mandays"])
+        if nda_cost and nda_cost["estimated_mandays"] is not None
+        else project_planning.get("man_days", 0)
+    )
+    total_cost = (
+        format_number(nda_cost["total_cost"])
+        if nda_cost and nda_cost["total_cost"] is not None
+        else project_planning.get("total_cost", "")
+    )
 
     kpis = [
         {
@@ -65,8 +79,8 @@ def build_case(db: Session, doc: dict) -> dict:
                 "teamSize": project_planning.get("team_size", 0),
                 "team": [],
                 "cost": {
-                    "manDays": project_planning.get("man_days", 0),
-                    "total": project_planning.get("total_cost", ""),
+                    "manDays": man_days,
+                    "total": total_cost,
                 },
                 "wbs": [],
                 "deliverables": project_planning.get("deliverables", []),
@@ -85,7 +99,7 @@ def list_cases(db: Session = Depends(get_db)):
     docs = db.execute(
         text(
             """
-            SELECT id, file_name, edited_by, approved_by, created_at
+            SELECT id, file_name, edited_by, approved_by, created_at, job_code
             FROM sow_document
             WHERE is_latest = true AND review_status = 'PUBLISHED'
             ORDER BY created_at DESC
@@ -100,7 +114,7 @@ def get_case(sow_id: int, db: Session = Depends(get_db)):
     doc = db.execute(
         text(
             """
-            SELECT id, file_name, edited_by, approved_by, created_at
+            SELECT id, file_name, edited_by, approved_by, created_at, job_code
             FROM sow_document
             WHERE id = :id AND review_status = 'PUBLISHED'
             """

@@ -52,6 +52,25 @@ def fetch_tags(db: Session, sow_id: int) -> dict:
     return grouped
 
 
+def fetch_nda_cost(db: Session, job_code: str):
+    """依 sow_document.job_code 對照 nda_work_station_apply，取得 Nebula API 回填的權威人天／成本。"""
+    if not job_code:
+        return None
+    return db.execute(
+        text(
+            "SELECT estimated_mandays, total_cost FROM nda_work_station_apply WHERE job_code = :job_code"
+        ),
+        {"job_code": job_code},
+    ).mappings().first()
+
+
+def format_number(value) -> str:
+    value = float(value)
+    if value == int(value):
+        return f"{int(value):,}"
+    return f"{value:,.1f}"
+
+
 def fetch_structured_content(db: Session, sow_id: int, version: int = None):
     """version 省略時回傳最新版本（公開 API 用）；指定 version 時回傳該版本（審查 API 抓原始基準用）。"""
     if version is None:
