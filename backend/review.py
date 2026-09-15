@@ -7,7 +7,7 @@ from sqlalchemy import text
 from sqlalchemy.orm import Session
 
 from db import get_db
-from common import derive_title, fetch_structured_content, fetch_tags
+from common import derive_title, fetch_nda_cost, fetch_structured_content, fetch_tags, format_number
 
 router = APIRouter(prefix="/api/review")
 
@@ -43,24 +43,17 @@ class TechnicalDesignIn(BaseModel):
 
 
 class DraftSaveIn(BaseModel):
-    reviewerName: str
     customerContext: CustomerContextIn
     projectPlanning: ProjectPlanningIn
     technicalDesign: TechnicalDesignIn
 
 
-class ReviewerIn(BaseModel):
-    reviewerName: str
-
-
 class ReturnIn(BaseModel):
-    reviewerName: str
     comment: Optional[str] = None
 
 
 class CommentIn(BaseModel):
     authorRole: Literal["DRI", "MANAGER"]
-    authorName: str = ""
     body: str
 
 
@@ -111,6 +104,21 @@ def _fetch_doc_status(db: Session, sow_id: int):
     ).mappings().first()
 
 
+def _resolve_reviewer_email(db: Session, sow_id: int, role: str) -> str:
+    """依 sow_document.job_code 查 nda_work_station_apply 的 dri/dri_manager email，取代原本手動輸入的姓名。"""
+    doc = db.execute(
+        text("SELECT job_code FROM sow_document WHERE id = :id"), {"id": sow_id}
+    ).mappings().first()
+    job_code = doc["job_code"] if doc else None
+    if not job_code:
+        return ""
+    column = "dri" if role == "DRI" else "dri_manager"
+    row = db.execute(
+        text(f"SELECT {column} FROM nda_work_station_apply WHERE job_code = :jc"), {"jc": job_code}
+    ).mappings().first()
+    return (row[column] if row else None) or ""
+
+
 def _ensure_draft(db: Session, sow_id: int):
     """DRI 第一次打開審查頁、或暫存曾被清掉時，從 version=1 的原始萃取內容建立暫存基準。"""
     db.execute(
@@ -131,7 +139,7 @@ def build_review_case(db: Session, sow_id: int):
     doc = db.execute(
         text(
             """
-            SELECT id, file_name, review_status, dri_submitted_at, manager_reviewed_at, created_at
+            SELECT id, file_name, review_status, dri_submitted_at, manager_reviewed_at, created_at, job_code
             FROM sow_document WHERE id = :id
             """
         ),
@@ -188,6 +196,25 @@ def build_review_case(db: Session, sow_id: int):
 
     industry = tags["INDUSTRY"][0] if tags["INDUSTRY"] else "Unknown"
 
+    nda_cost = fetch_nda_cost(db, doc.get("job_code"))
+    nda_available = bool(
+        nda_cost and nda_cost["estimated_mandays"] is not None and nda_cost["total_cost"] is not None
+    )
+    if nda_available:
+        man_days_field = _field(
+            format_number(nda_cost["estimated_mandays"]), format_number(nda_cost["estimated_mandays"]), saved_at
+        )
+        man_days_field["source"] = "nda"
+        total_cost_field = _field(
+            format_number(nda_cost["total_cost"]), format_number(nda_cost["total_cost"]), saved_at
+        )
+        total_cost_field["source"] = "nda"
+    else:
+        man_days_field = _field(pp_o.get("man_days", 0), pp_c.get("man_days", 0), saved_at)
+        man_days_field["source"] = "ai"
+        total_cost_field = _field(pp_o.get("total_cost", ""), pp_c.get("total_cost", ""), saved_at)
+        total_cost_field["source"] = "ai"
+
     return {
         "sowId": doc["id"],
         "title": derive_title(doc["file_name"]),
@@ -207,8 +234,8 @@ def build_review_case(db: Session, sow_id: int):
                 "owner": _field(pp_o.get("owner", ""), pp_c.get("owner", ""), saved_at),
                 "period": _field(pp_o.get("period", ""), pp_c.get("period", ""), saved_at),
                 "teamSize": _field(pp_o.get("team_size", 0), pp_c.get("team_size", 0), saved_at),
-                "manDays": _field(pp_o.get("man_days", 0), pp_c.get("man_days", 0), saved_at),
-                "totalCost": _field(pp_o.get("total_cost", ""), pp_c.get("total_cost", ""), saved_at),
+                "manDays": man_days_field,
+                "totalCost": total_cost_field,
                 "deliverables": _field(pp_o.get("deliverables", []), pp_c.get("deliverables", []), saved_at),
             },
             "C": {
@@ -249,6 +276,7 @@ def save_draft(sow_id: int, body: DraftSaveIn, db: Session = Depends(get_db)):
 
     _ensure_draft(db, sow_id)
     customer_context, project_planning, technical_design = _to_snake_content(body)
+    reviewer = _resolve_reviewer_email(db, sow_id, "DRI")
     db.execute(
         text(
             """
@@ -266,7 +294,7 @@ def save_draft(sow_id: int, body: DraftSaveIn, db: Session = Depends(get_db)):
             "cc": json.dumps(customer_context, ensure_ascii=False),
             "pp": json.dumps(project_planning, ensure_ascii=False),
             "td": json.dumps(technical_design, ensure_ascii=False),
-            "reviewer": body.reviewerName,
+            "reviewer": reviewer,
         },
     )
     db.commit()
@@ -274,7 +302,8 @@ def save_draft(sow_id: int, body: DraftSaveIn, db: Session = Depends(get_db)):
 
 
 @router.post("/cases/{sow_id}/submit")
-def submit_for_review(sow_id: int, body: ReviewerIn, db: Session = Depends(get_db)):
+def submit_for_review(sow_id: int, db: Session = Depends(get_db)):
+    reviewer = _resolve_reviewer_email(db, sow_id, "DRI")
     result = db.execute(
         text(
             """
@@ -283,7 +312,7 @@ def submit_for_review(sow_id: int, body: ReviewerIn, db: Session = Depends(get_d
             WHERE id = :id AND review_status IN ('DRI_REVIEW', 'RETURNED_TO_DRI')
             """
         ),
-        {"id": sow_id, "reviewer": body.reviewerName},
+        {"id": sow_id, "reviewer": reviewer},
     )
     if result.rowcount == 0:
         db.rollback()
@@ -297,6 +326,7 @@ def add_comment(sow_id: int, body: CommentIn, db: Session = Depends(get_db)):
     doc = _fetch_doc_status(db, sow_id)
     if not doc:
         raise HTTPException(status_code=404, detail="Case not found")
+    author_name = _resolve_reviewer_email(db, sow_id, body.authorRole)
     db.execute(
         text(
             """
@@ -304,7 +334,7 @@ def add_comment(sow_id: int, body: CommentIn, db: Session = Depends(get_db)):
             VALUES (:sow_id, :role, :name, :body)
             """
         ),
-        {"sow_id": sow_id, "role": body.authorRole, "name": body.authorName, "body": body.body},
+        {"sow_id": sow_id, "role": body.authorRole, "name": author_name, "body": body.body},
     )
     db.commit()
     return build_review_case(db, sow_id)
@@ -312,6 +342,7 @@ def add_comment(sow_id: int, body: CommentIn, db: Session = Depends(get_db)):
 
 @router.post("/cases/{sow_id}/return")
 def return_to_dri(sow_id: int, body: ReturnIn, db: Session = Depends(get_db)):
+    reviewer = _resolve_reviewer_email(db, sow_id, "MANAGER")
     if body.comment:
         db.execute(
             text(
@@ -320,7 +351,7 @@ def return_to_dri(sow_id: int, body: ReturnIn, db: Session = Depends(get_db)):
                 VALUES (:sow_id, 'MANAGER', :name, :body)
                 """
             ),
-            {"sow_id": sow_id, "name": body.reviewerName, "body": body.comment},
+            {"sow_id": sow_id, "name": reviewer, "body": body.comment},
         )
     result = db.execute(
         text(
@@ -330,7 +361,7 @@ def return_to_dri(sow_id: int, body: ReturnIn, db: Session = Depends(get_db)):
             WHERE id = :id AND review_status = 'MANAGER_REVIEW'
             """
         ),
-        {"id": sow_id, "reviewer": body.reviewerName},
+        {"id": sow_id, "reviewer": reviewer},
     )
     if result.rowcount == 0:
         db.rollback()
@@ -340,12 +371,13 @@ def return_to_dri(sow_id: int, body: ReturnIn, db: Session = Depends(get_db)):
 
 
 @router.post("/cases/{sow_id}/approve")
-def approve_and_publish(sow_id: int, body: ReviewerIn, db: Session = Depends(get_db)):
+def approve_and_publish(sow_id: int, db: Session = Depends(get_db)):
     doc = _fetch_doc_status(db, sow_id)
     if not doc:
         raise HTTPException(status_code=404, detail="Case not found")
     if doc["review_status"] != "MANAGER_REVIEW":
         raise HTTPException(status_code=409, detail="Case is not awaiting manager review")
+    reviewer = _resolve_reviewer_email(db, sow_id, "MANAGER")
 
     next_version = db.execute(
         text("SELECT COALESCE(MAX(version), 0) + 1 FROM sow_structured_content WHERE sow_id = :id"),
@@ -374,7 +406,7 @@ def approve_and_publish(sow_id: int, body: ReviewerIn, db: Session = Depends(get
             WHERE id = :id AND review_status = 'MANAGER_REVIEW'
             """
         ),
-        {"id": sow_id, "reviewer": body.reviewerName},
+        {"id": sow_id, "reviewer": reviewer},
     )
     db.commit()
     return build_review_case(db, sow_id)

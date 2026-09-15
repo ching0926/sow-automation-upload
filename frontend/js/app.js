@@ -16,8 +16,8 @@ const state = {
   lang: localStorage.getItem('skb_lang') || 'zh',
   role: localStorage.getItem('skb_role') || 'pm',
   view: 'list',
-  appliedFilters: { industry: [], service: [], usecase: [], skill: [] },
-  stagedFilters: { industry: [], service: [], usecase: [], skill: [] },
+  appliedFilters: { industry: [], skill: [] },
+  stagedFilters: { industry: [], skill: [] },
   sort: 'new',
   page: 1,
   pageSize: 16,
@@ -47,24 +47,18 @@ function caseById(id) { return CASES.find(c => c.id === Number(id)); }
 function getFilterOptions() {
   return {
     industry: [...new Set(CASES.map(c => c.industry))],
-    service: [...new Set(CASES.flatMap(c => c.serviceCategory))],
-    usecase: [...new Set(CASES.flatMap(c => c.useCase))],
     skill: [...new Set(CASES.flatMap(c => c.skills))],
   };
 }
 
 function optionLabel(dim, code) {
   if (dim === 'industry') return code;
-  if (dim === 'service') return L('service', code, state.lang);
-  if (dim === 'usecase') return L('usecase', code, state.lang);
   if (dim === 'skill') return L('skill', code, state.lang);
   return code;
 }
 
 function matchesFilters(c, f) {
   if (f.industry.length && !f.industry.includes(c.industry)) return false;
-  if (f.service.length && !f.service.some(s => c.serviceCategory.includes(s))) return false;
-  if (f.usecase.length && !f.usecase.some(s => c.useCase.includes(s))) return false;
   if (f.skill.length && !f.skill.some(s => c.skills.includes(s))) return false;
   return true;
 }
@@ -107,8 +101,8 @@ function showView(activeId) {
 // ---------- filter bar ----------
 function renderFilterBar() {
   const opts = getFilterOptions();
-  const dims = ['industry', 'service', 'usecase', 'skill'];
-  const labelKeys = { industry: 'filter_industry', service: 'filter_service', usecase: 'filter_usecase', skill: 'filter_skill' };
+  const dims = ['industry', 'skill'];
+  const labelKeys = { industry: 'filter_industry', skill: 'filter_skill' };
   const html = dims.map(dim => {
     const selected = state.stagedFilters[dim];
     const chips = selected.map(v => `<span class="chip" data-chip-dim="${dim}" data-chip-value="${v}">${optionLabel(dim, v)}<span class="chip-x" data-remove-dim="${dim}" data-remove-value="${v}">✕</span></span>`).join('');
@@ -461,8 +455,8 @@ document.addEventListener('DOMContentLoaded', async () => {
 
     // filter clear all
     if (t_.id === 'filter-clear') {
-      state.stagedFilters = { industry: [], service: [], usecase: [], skill: [] };
-      state.appliedFilters = { industry: [], service: [], usecase: [], skill: [] };
+      state.stagedFilters = { industry: [], skill: [] };
+      state.appliedFilters = { industry: [], skill: [] };
       state.page = 1;
       render(); return;
     }

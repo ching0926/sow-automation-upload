@@ -42,7 +42,6 @@ const STATUS_CLASS = {
 
 const MODE = window.REVIEW_MODE === 'manager' ? 'manager' : 'dri';
 const SOW_ID = new URLSearchParams(location.search).get('id');
-const REVIEWER_NAME_KEY = 'sow_review_reviewer_name';
 
 const state = {
   tab: 'A',
@@ -69,23 +68,9 @@ function fieldEditable() {
   return state.case.status === 'DRI_REVIEW' || state.case.status === 'RETURNED_TO_DRI';
 }
 
-function getReviewerName() {
-  return document.getElementById('reviewer-name').value.trim();
-}
-
-function requireReviewerName() {
-  const name = getReviewerName();
-  if (!name) {
-    showToast('請先輸入姓名');
-    return null;
-  }
-  return name;
-}
-
-function buildDraftPayload(reviewerName) {
+function buildDraftPayload() {
   const d = state.case.detail;
   return {
-    reviewerName,
     customerContext: {
       industryBackground: d.A.industryBackground.current,
       challenge: d.A.challenge.current,
@@ -127,11 +112,12 @@ function renderMetaBar() {
   const c = state.case;
   const items = [
     { label: '案件名稱', value: c.title },
-    { label: 'db_id', value: c.sowId },
     { label: '產業', value: c.industry },
     { label: '上傳時間', value: c.uploadedAt },
   ];
-  if (MODE === 'manager') items.push({ label: 'DRI 提交時間', value: c.driSubmittedAt || '—' });
+  if (MODE === 'manager') {
+    items.push({ label: 'DRI 提交時間', value: c.driSubmittedAt || '—' });
+  }
   const bar = document.getElementById('meta-bar');
   bar.className = 'meta-bar' + (items.length > 4 ? ' meta-bar-5' : '');
   bar.innerHTML = items.map((i) => `<div class="meta-item"><span>${i.label}</span><strong>${escapeHtml(i.value)}</strong></div>`).join('');
@@ -147,8 +133,11 @@ function renderFieldDri(tab, def) {
   const f = state.case.detail[tab][def.key];
   const path = `${tab}.${def.key}`;
   const dirty = state.dirty.has(path);
-  const disabledAttr = fieldEditable() ? '' : 'disabled';
-  const hint = def.type === 'list' ? '<span style="font-weight:400;color:var(--text-muted);font-size:11px;">（每行一項）</span>' : '';
+  const ndaLocked = f.source === 'nda';
+  const disabledAttr = (fieldEditable() && !ndaLocked) ? '' : 'disabled';
+  const hint = def.type === 'list'
+    ? '<span class="field-hint">（每行一項）</span>'
+    : ndaLocked ? '<span class="field-hint">（依 NDA 工作站資料鎖定，不可編輯）</span>' : '';
 
   if (def.type === 'list') {
     const val = (f.current || []).join('\n');
@@ -164,7 +153,7 @@ function renderFieldDri(tab, def) {
     </div>`;
   }
   return `<div class="field-block ${dirty ? 'dirty' : ''}">
-    <label class="field-label">${def.label}</label>
+    <label class="field-label">${def.label} ${hint}</label>
     <div class="field-input-row">
       <input class="field-input" data-path="${path}" data-type="text" value="${escapeAttr(f.current)}" ${disabledAttr} />
       ${def.unit ? `<span class="field-unit">${def.unit}</span>` : ''}
@@ -194,6 +183,7 @@ function renderFieldManager(tab, def) {
   const currentDisplay = isList ? (f.current || []).join('、') : f.current;
   const originalDisplay = isList ? (f.original || []).join('、') : f.original;
   const hasDiff = JSON.stringify(f.current) !== JSON.stringify(f.original);
+  const ndaLocked = f.source === 'nda';
 
   return `<div class="field-row">
     <div class="field-block readonly">
@@ -202,11 +192,15 @@ function renderFieldManager(tab, def) {
     </div>
     <div class="changelog-card">
       <div class="changelog-title">變更記錄</div>
-      <div class="changelog-time">DRI 修改於 ${f.savedAt || '—'}</div>
-      ${hasDiff ? `
-        <div class="diff-before"><span class="diff-label">原內容：</span>${escapeHtml(originalDisplay)}</div>
-        <div class="diff-after"><span class="diff-label">修改後：</span>${escapeHtml(currentDisplay)}</div>
-      ` : '<div class="diff-none">無修改</div>'}
+      ${ndaLocked ? `
+        <div class="diff-none">此數值採用 NDA 工作站申請的權威資料，與 DRI 編輯無關</div>
+      ` : `
+        <div class="changelog-time">DRI 修改於 ${f.savedAt || '—'}</div>
+        ${hasDiff ? `
+          <div class="diff-before"><span class="diff-label">原內容：</span>${escapeHtml(originalDisplay)}</div>
+          <div class="diff-after"><span class="diff-label">修改後：</span>${escapeHtml(currentDisplay)}</div>
+        ` : '<div class="diff-none">無修改</div>'}
+      `}
     </div>
   </div>`;
 }
@@ -259,15 +253,21 @@ function renderComments() {
   const panel = document.getElementById('comment-panel');
   if (!panel) return;
   const comments = state.case.comments || [];
-  if (!comments.length) {
-    panel.innerHTML = '<div class="comment-panel-title">留言記錄</div><div class="diff-none">尚無留言</div>';
-    return;
-  }
-  panel.innerHTML = '<div class="comment-panel-title">留言記錄</div>' + comments.map((c) => `
-    <div class="comment-item">
-      <div class="changelog-time">${c.authorRole === 'DRI' ? 'DRI' : '主管'}・${escapeHtml(c.authorName || '—')}・${escapeHtml(c.createdAt || '')}</div>
-      <div class="diff-after">${escapeHtml(c.body)}</div>
-    </div>`).join('');
+  const list = comments.length
+    ? comments.map((c) => `
+      <div class="comment-item">
+        <div class="changelog-time">${c.authorRole === 'DRI' ? 'DRI' : '主管'}・${escapeHtml(c.authorName || '—')}・${escapeHtml(c.createdAt || '')}</div>
+        <div class="diff-after">${escapeHtml(c.body)}</div>
+      </div>`).join('')
+    : '<div class="diff-none">尚無留言</div>';
+  const form = `
+    <div class="field-block" style="margin-top:14px;">
+      <textarea class="field-textarea small" id="comment-input" placeholder="輸入留言…"></textarea>
+      <div class="action-bar" style="margin-top:8px;">
+        <button class="btn btn-primary" data-action="comment">送出留言</button>
+      </div>
+    </div>`;
+  panel.innerHTML = '<div class="comment-panel-title">留言記錄</div>' + list + form;
 }
 
 function render() {
@@ -280,10 +280,8 @@ function render() {
 
 // ---------- actions ----------
 async function saveAll() {
-  const reviewerName = requireReviewerName();
-  if (!reviewerName) return;
   try {
-    state.case = await apiSaveDraft(SOW_ID, buildDraftPayload(reviewerName));
+    state.case = await apiSaveDraft(SOW_ID, buildDraftPayload());
     state.dirty.clear();
     render();
     showToast('已儲存');
@@ -293,12 +291,10 @@ async function saveAll() {
 }
 
 async function submitReview() {
-  const reviewerName = requireReviewerName();
-  if (!reviewerName) return;
   try {
     // 先存檔，避免 DRI 忘記按「儲存」就直接送出，導致最後一次編輯遺失
-    await apiSaveDraft(SOW_ID, buildDraftPayload(reviewerName));
-    state.case = await apiSubmitReview(SOW_ID, { reviewerName });
+    await apiSaveDraft(SOW_ID, buildDraftPayload());
+    state.case = await apiSubmitReview(SOW_ID);
     state.dirty.clear();
     render();
     showToast('已送出主管審查');
@@ -308,13 +304,11 @@ async function submitReview() {
 }
 
 async function returnToDri() {
-  const reviewerName = requireReviewerName();
-  if (!reviewerName) return;
   if (!confirm('確定要退回給 DRI 修改嗎？')) return;
   const reason = prompt('退回理由（選填，留空可直接送出）：', '');
   if (reason === null) return;
   try {
-    state.case = await apiReturnToDri(SOW_ID, { reviewerName, comment: reason || undefined });
+    state.case = await apiReturnToDri(SOW_ID, { comment: reason || undefined });
     render();
     showToast('已退回 DRI 修改');
   } catch (e) {
@@ -323,15 +317,29 @@ async function returnToDri() {
 }
 
 async function approveAndPublish() {
-  const reviewerName = requireReviewerName();
-  if (!reviewerName) return;
   if (!confirm('確定要核准並發布到案例庫嗎？')) return;
   try {
-    state.case = await apiApprove(SOW_ID, { reviewerName });
+    state.case = await apiApprove(SOW_ID);
     render();
     showToast('已核准並發布至案例庫');
   } catch (e) {
     showToast(e.message || '核准失敗');
+  }
+}
+
+async function submitComment() {
+  const input = document.getElementById('comment-input');
+  const text = input.value.trim();
+  if (!text) {
+    showToast('請先輸入留言內容');
+    return;
+  }
+  try {
+    state.case = await apiAddComment(SOW_ID, { authorRole: MODE === 'dri' ? 'DRI' : 'MANAGER', body: text });
+    render();
+    showToast('已送出留言');
+  } catch (e) {
+    showToast(e.message || '留言送出失敗');
   }
 }
 
@@ -341,10 +349,6 @@ async function init() {
     document.getElementById('review-content').innerHTML = '<div class="section-heading">缺少或無效的案例 ID，請確認連結是否完整。</div>';
     return;
   }
-
-  const nameInput = document.getElementById('reviewer-name');
-  nameInput.value = localStorage.getItem(REVIEWER_NAME_KEY) || '';
-  nameInput.addEventListener('input', () => localStorage.setItem(REVIEWER_NAME_KEY, nameInput.value));
 
   document.getElementById('review-content').innerHTML = '<div class="section-heading">載入中…</div>';
   try {
@@ -391,6 +395,7 @@ document.addEventListener('DOMContentLoaded', () => {
       if (action === 'submit') submitReview();
       if (action === 'return') returnToDri();
       if (action === 'approve') approveAndPublish();
+      if (action === 'comment') submitComment();
       return;
     }
 
