@@ -44,14 +44,6 @@ function persist() {
 
 function caseById(id) { return CASES.find(c => c.id === Number(id)); }
 
-function tagClass(color) { return `tag tag-${color}`; }
-
-// 真實資料的 serviceCategory/useCase/skills 是 tag_name 原文（非 mock 的 code），
-// LABELS 字典查不到時就沒有預先定義的顏色，所以每個維度給一個固定的 fallback 色。
-function tagColorFor(dict, code, fallback) {
-  return (LABELS[dict][code] && LABELS[dict][code].color) || fallback;
-}
-
 function getFilterOptions() {
   return {
     industry: [...new Set(CASES.map(c => c.industry))],
@@ -139,13 +131,6 @@ function renderFilterBar() {
 }
 
 // ---------- case card ----------
-function caseTagsHtml(c) {
-  const serviceTags = c.serviceCategory.map(s => `<span class="${tagClass(tagColorFor('service', s, 'purple'))}">${L('service', s, state.lang)}</span>`).join('');
-  const usecaseTags = c.useCase.map(s => `<span class="${tagClass(tagColorFor('usecase', s, 'amber'))}">${L('usecase', s, state.lang)}</span>`).join('');
-  const skillTags = c.skills.map(s => `<span class="${tagClass(tagColorFor('skill', s, 'blue'))}">${L('skill', s, state.lang)}</span>`).join('');
-  return serviceTags + usecaseTags + skillTags;
-}
-
 function renderCard(c) {
   const fav = state.favorites.has(c.id);
   const selectedCls = state.previewId === c.id ? 'selected' : '';
@@ -158,9 +143,6 @@ function renderCard(c) {
       </div>
       <div class="card-title">${c.title[state.lang]}</div>
       <div class="card-desc">${c.description[state.lang]}</div>
-      <div class="card-tags">
-        ${caseTagsHtml(c)}
-      </div>
       <div class="card-date">${c.date}</div>
     </div>`;
 }
@@ -405,9 +387,6 @@ function renderPanel() {
         </div>
         <h2 class="preview-title">${c.title[state.lang]}</h2>
         <p class="preview-desc">${c.description[state.lang]}</p>
-        <div class="card-tags">
-          ${caseTagsHtml(c)}
-        </div>
         <div class="preview-meta">
           <span>${t(state.lang, 'preview_uploaded')}：${c.date}</span>
           <span>${t(state.lang, 'preview_creator')}：${c.creator}</span>
