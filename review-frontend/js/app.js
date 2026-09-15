@@ -1,5 +1,7 @@
 // SOW 審查頁面邏輯。獨立於 frontend/js/app.js 維護，靠 window.REVIEW_MODE
 // ('dri' | 'manager') 區分 dri.html / manager.html 兩個頁面該怎麼渲染同一份資料模型。
+// 案例資料一律來自 backend/review.py 的 /api/review/cases/{sow_id} 系列端點，
+// 案例 id 從網址 ?id= 讀取。
 
 const TAB_ORDER = ['A', 'B', 'C'];
 const TAB_LABEL = { A: '客戶脈絡與價值', B: '專案規劃與交付', C: '技術設計與架構' };
@@ -39,32 +41,14 @@ const STATUS_CLASS = {
 };
 
 const MODE = window.REVIEW_MODE === 'manager' ? 'manager' : 'dri';
-const MOCK_CASE = MODE === 'manager' ? MANAGER_MOCK_CASE : DRI_MOCK_CASE;
-const STORAGE_KEY = `sow_review_${MODE}_${MOCK_CASE.sowId}`;
+const SOW_ID = new URLSearchParams(location.search).get('id');
+const REVIEWER_NAME_KEY = 'sow_review_reviewer_name';
 
 const state = {
   tab: 'A',
-  case: loadCase(),
+  case: null,
   dirty: new Set(), // 例如 "A.challenge"、"A.kpis.0.value"，代表已編輯但尚未儲存
 };
-
-function loadCase() {
-  const saved = localStorage.getItem(STORAGE_KEY);
-  if (saved) {
-    try { return JSON.parse(saved); } catch (e) { /* 壞資料就退回預設 mock */ }
-  }
-  return JSON.parse(JSON.stringify(MOCK_CASE));
-}
-
-function persist() {
-  localStorage.setItem(STORAGE_KEY, JSON.stringify(state.case));
-}
-
-function now() {
-  const d = new Date();
-  const pad = (n) => String(n).padStart(2, '0');
-  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}`;
-}
 
 function escapeHtml(s) {
   return String(s ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
@@ -83,6 +67,45 @@ function showToast(msg) {
 
 function fieldEditable() {
   return state.case.status === 'DRI_REVIEW' || state.case.status === 'RETURNED_TO_DRI';
+}
+
+function getReviewerName() {
+  return document.getElementById('reviewer-name').value.trim();
+}
+
+function requireReviewerName() {
+  const name = getReviewerName();
+  if (!name) {
+    showToast('請先輸入姓名');
+    return null;
+  }
+  return name;
+}
+
+function buildDraftPayload(reviewerName) {
+  const d = state.case.detail;
+  return {
+    reviewerName,
+    customerContext: {
+      industryBackground: d.A.industryBackground.current,
+      challenge: d.A.challenge.current,
+      solution: d.A.solution.current,
+      kpis: d.A.kpis.map((k) => ({ icon: k.icon, value: k.value.current, label: k.label.current })),
+    },
+    projectPlanning: {
+      owner: d.B.owner.current,
+      period: d.B.period.current,
+      teamSize: d.B.teamSize.current,
+      manDays: d.B.manDays.current,
+      totalCost: d.B.totalCost.current,
+      deliverables: d.B.deliverables.current,
+    },
+    technicalDesign: {
+      coreFunctions: d.C.coreFunctions.current,
+      architecture: d.C.architecture.current,
+      techStack: d.C.techStack.current,
+    },
+  };
 }
 
 // ---------- render: topbar / meta / tabs ----------
@@ -232,62 +255,110 @@ function renderContent() {
   el.innerHTML = html;
 }
 
+function renderComments() {
+  const panel = document.getElementById('comment-panel');
+  if (!panel) return;
+  const comments = state.case.comments || [];
+  if (!comments.length) {
+    panel.innerHTML = '<div class="comment-panel-title">留言記錄</div><div class="diff-none">尚無留言</div>';
+    return;
+  }
+  panel.innerHTML = '<div class="comment-panel-title">留言記錄</div>' + comments.map((c) => `
+    <div class="comment-item">
+      <div class="changelog-time">${c.authorRole === 'DRI' ? 'DRI' : '主管'}・${escapeHtml(c.authorName || '—')}・${escapeHtml(c.createdAt || '')}</div>
+      <div class="diff-after">${escapeHtml(c.body)}</div>
+    </div>`).join('');
+}
+
 function render() {
   renderTopbar();
   renderMetaBar();
   renderTabs();
   renderContent();
+  renderComments();
 }
 
 // ---------- actions ----------
-function commitDirty() {
-  const ts = now();
-  state.dirty.forEach((path) => {
-    const parts = path.split('.');
-    if (parts[1] === 'kpis') {
-      state.case.detail.A.kpis[Number(parts[2])].savedAt = ts;
-    } else {
-      state.case.detail[parts[0]][parts[1]].savedAt = ts;
-    }
-  });
-  state.dirty.clear();
+async function saveAll() {
+  const reviewerName = requireReviewerName();
+  if (!reviewerName) return;
+  try {
+    state.case = await apiSaveDraft(SOW_ID, buildDraftPayload(reviewerName));
+    state.dirty.clear();
+    render();
+    showToast('已儲存');
+  } catch (e) {
+    showToast(e.message || '儲存失敗');
+  }
 }
 
-function saveAll() {
-  commitDirty();
-  persist();
-  render();
-  showToast('已儲存');
+async function submitReview() {
+  const reviewerName = requireReviewerName();
+  if (!reviewerName) return;
+  try {
+    // 先存檔，避免 DRI 忘記按「儲存」就直接送出，導致最後一次編輯遺失
+    await apiSaveDraft(SOW_ID, buildDraftPayload(reviewerName));
+    state.case = await apiSubmitReview(SOW_ID, { reviewerName });
+    state.dirty.clear();
+    render();
+    showToast('已送出主管審查');
+  } catch (e) {
+    showToast(e.message || '送出失敗');
+  }
 }
 
-function submitReview() {
-  commitDirty();
-  state.case.status = 'MANAGER_REVIEW';
-  state.case.driSubmittedAt = now();
-  persist();
-  render();
-  showToast('已送出主管審查');
-}
-
-function returnToDri() {
+async function returnToDri() {
+  const reviewerName = requireReviewerName();
+  if (!reviewerName) return;
   if (!confirm('確定要退回給 DRI 修改嗎？')) return;
-  state.case.status = 'RETURNED_TO_DRI';
-  persist();
-  render();
-  showToast('已退回 DRI 修改');
+  const reason = prompt('退回理由（選填，留空可直接送出）：', '');
+  if (reason === null) return;
+  try {
+    state.case = await apiReturnToDri(SOW_ID, { reviewerName, comment: reason || undefined });
+    render();
+    showToast('已退回 DRI 修改');
+  } catch (e) {
+    showToast(e.message || '退回失敗');
+  }
 }
 
-function approveAndPublish() {
+async function approveAndPublish() {
+  const reviewerName = requireReviewerName();
+  if (!reviewerName) return;
   if (!confirm('確定要核准並發布到案例庫嗎？')) return;
-  state.case.status = 'PUBLISHED';
-  persist();
+  try {
+    state.case = await apiApprove(SOW_ID, { reviewerName });
+    render();
+    showToast('已核准並發布至案例庫');
+  } catch (e) {
+    showToast(e.message || '核准失敗');
+  }
+}
+
+// ---------- init ----------
+async function init() {
+  if (!SOW_ID || !/^\d+$/.test(SOW_ID)) {
+    document.getElementById('review-content').innerHTML = '<div class="section-heading">缺少或無效的案例 ID，請確認連結是否完整。</div>';
+    return;
+  }
+
+  const nameInput = document.getElementById('reviewer-name');
+  nameInput.value = localStorage.getItem(REVIEWER_NAME_KEY) || '';
+  nameInput.addEventListener('input', () => localStorage.setItem(REVIEWER_NAME_KEY, nameInput.value));
+
+  document.getElementById('review-content').innerHTML = '<div class="section-heading">載入中…</div>';
+  try {
+    state.case = await apiGetReviewCase(SOW_ID);
+  } catch (e) {
+    document.getElementById('review-content').innerHTML = `<div class="section-heading">載入失敗：${escapeHtml(e.message)}</div>`;
+    return;
+  }
   render();
-  showToast('已核准並發布至案例庫（實際發布串接留待後端整合）');
 }
 
 // ---------- events ----------
 document.addEventListener('DOMContentLoaded', () => {
-  render();
+  init();
 
   document.addEventListener('input', (e) => {
     const t_ = e.target;

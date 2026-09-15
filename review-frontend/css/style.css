@@ -131,6 +131,16 @@ textarea, input { font-family: inherit; }
 .tag-blue { color: #2563eb; border-color: #2563eb; }
 .tag-gray { color: #64748b; border-color: #cbd5e1; }
 
+/* ---------- reviewer name / comments ---------- */
+#reviewer-name { width: 140px; }
+.comment-panel {
+  background: var(--card-bg); border: 1px solid var(--border); border-radius: var(--radius);
+  box-shadow: var(--shadow); padding: 18px 20px; margin-top: 18px;
+}
+.comment-panel-title { font-weight: 700; font-size: 13.5px; margin-bottom: 10px; }
+.comment-item { padding: 10px 0; border-top: 1px dashed var(--border); }
+.comment-item:first-of-type { border-top: none; padding-top: 0; }
+
 /* ---------- toast ---------- */
 .toast {
   position: fixed; bottom: 24px; right: 28px; background: #1e293b; color: white; padding: 11px 18px;
