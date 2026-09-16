@@ -108,3 +108,13 @@ async function loadCases() {
   CASES = await res.json();
 }
 
+// SA 角色的 category/skill 篩選參考表（來自 tag_definition，見 backend/app.py 的 GET /api/skill-taxonomy），
+// 形狀是 { category: [skill_name, ...] }，跟案例實際資料無關，是完整的技能分類對照表。
+let SKILL_TAXONOMY = {};
+
+async function loadSkillTaxonomy() {
+  const res = await fetch('/api/skill-taxonomy');
+  if (!res.ok) throw new Error(`Failed to load /api/skill-taxonomy: ${res.status}`);
+  SKILL_TAXONOMY = await res.json();
+}
+
