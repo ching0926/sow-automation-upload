@@ -98,21 +98,45 @@ def _to_snake_content(body: DraftSaveIn):
     return customer_context, project_planning, technical_design
 
 
+def _resolve_sow_id(db: Session, job_code: str) -> int:
+    """把審核連結網址上的 job_code 解析成內部 sow_document.id；查不到就 404。"""
+    row = db.execute(
+        text(
+            "SELECT id FROM sow_document WHERE job_code = :job_code AND is_latest = true ORDER BY id DESC LIMIT 1"
+        ),
+        {"job_code": job_code},
+    ).mappings().first()
+    if not row:
+        raise HTTPException(status_code=404, detail="Case not found")
+    return row["id"]
+
+
 def _fetch_doc_status(db: Session, sow_id: int):
     return db.execute(
-        text("SELECT review_status FROM sow_document WHERE id = :id"), {"id": sow_id}
+        text("SELECT dri_status, manager_status FROM sow_document WHERE id = :id"), {"id": sow_id}
     ).mappings().first()
 
 
+def _derive_status(dri_status: str, manager_status: str) -> str:
+    """把 dri_status/manager_status 組合推導回原本 review_status 的 4 種字串，維持 API 對外的 status 欄位不變。"""
+    if dri_status == "approve" and manager_status == "approve":
+        return "PUBLISHED"
+    if dri_status == "approve" and manager_status == "waiting":
+        return "MANAGER_REVIEW"
+    if dri_status == "waiting" and manager_status == "reject":
+        return "RETURNED_TO_DRI"
+    return "DRI_REVIEW"
+
+
 def _resolve_reviewer_email(db: Session, sow_id: int, role: str) -> str:
-    """依 sow_document.job_code 查 nda_work_station_apply 的 dri/dri_manager email，取代原本手動輸入的姓名。"""
+    """依 sow_document.job_code 查 nda_work_station_apply 的 dri_mail/manager_mail email，取代原本手動輸入的姓名。"""
     doc = db.execute(
         text("SELECT job_code FROM sow_document WHERE id = :id"), {"id": sow_id}
     ).mappings().first()
     job_code = doc["job_code"] if doc else None
     if not job_code:
         return ""
-    column = "dri" if role == "DRI" else "dri_manager"
+    column = "dri_mail" if role == "DRI" else "manager_mail"
     row = db.execute(
         text(f"SELECT {column} FROM nda_work_station_apply WHERE job_code = :jc"), {"jc": job_code}
     ).mappings().first()
@@ -120,15 +144,15 @@ def _resolve_reviewer_email(db: Session, sow_id: int, role: str) -> str:
 
 
 def _ensure_draft(db: Session, sow_id: int):
-    """DRI 第一次打開審查頁、或暫存曾被清掉時，從 version=1 的原始萃取內容建立暫存基準。"""
+    """DRI 第一次打開審查頁時，從 version=1 的原始萃取內容建立暫存的第一版（version=1）。"""
     db.execute(
         text(
             """
-            INSERT INTO sow_review_draft (sow_id, customer_context, project_planning, technical_design)
-            SELECT :sow_id, customer_context, project_planning, technical_design
+            INSERT INTO sow_review_draft (sow_id, version, customer_context, project_planning, technical_design)
+            SELECT :sow_id, 1, customer_context, project_planning, technical_design
             FROM sow_structured_content
             WHERE sow_id = :sow_id AND version = 1
-            ON CONFLICT (sow_id) DO NOTHING
+            ON CONFLICT (sow_id, version) DO NOTHING
             """
         ),
         {"sow_id": sow_id},
@@ -139,7 +163,7 @@ def build_review_case(db: Session, sow_id: int):
     doc = db.execute(
         text(
             """
-            SELECT id, file_name, review_status, dri_submitted_at, manager_reviewed_at, created_at, job_code
+            SELECT id, file_name, dri_status, manager_status, dri_submitted_at, manager_reviewed_at, created_at, job_code
             FROM sow_document WHERE id = :id
             """
         ),
@@ -157,6 +181,7 @@ def build_review_case(db: Session, sow_id: int):
             """
             SELECT customer_context, project_planning, technical_design, updated_at
             FROM sow_review_draft WHERE sow_id = :id
+            ORDER BY version DESC LIMIT 1
             """
         ),
         {"id": sow_id},
@@ -222,7 +247,7 @@ def build_review_case(db: Session, sow_id: int):
         "uploadedAt": doc["created_at"].date().isoformat() if doc["created_at"] else "",
         "driSubmittedAt": _fmt(doc["dri_submitted_at"]),
         "managerReviewedAt": _fmt(doc["manager_reviewed_at"]),
-        "status": doc["review_status"],
+        "status": _derive_status(doc["dri_status"], doc["manager_status"]),
         "detail": {
             "A": {
                 "industryBackground": _field(cc_o.get("industry_background", ""), cc_c.get("industry_background", ""), saved_at),
@@ -258,20 +283,22 @@ def build_review_case(db: Session, sow_id: int):
 
 # ---------- routes ----------
 
-@router.get("/cases/{sow_id}")
-def get_review_case(sow_id: int, db: Session = Depends(get_db)):
+@router.get("/cases/{job_code}")
+def get_review_case(job_code: str, db: Session = Depends(get_db)):
+    sow_id = _resolve_sow_id(db, job_code)
     case = build_review_case(db, sow_id)
     if case is None:
         raise HTTPException(status_code=404, detail="Case not found")
     return case
 
 
-@router.put("/cases/{sow_id}/draft")
-def save_draft(sow_id: int, body: DraftSaveIn, db: Session = Depends(get_db)):
+@router.put("/cases/{job_code}/draft")
+def save_draft(job_code: str, body: DraftSaveIn, db: Session = Depends(get_db)):
+    sow_id = _resolve_sow_id(db, job_code)
     doc = _fetch_doc_status(db, sow_id)
     if not doc:
         raise HTTPException(status_code=404, detail="Case not found")
-    if doc["review_status"] not in ("DRI_REVIEW", "RETURNED_TO_DRI"):
+    if doc["dri_status"] != "waiting":
         raise HTTPException(status_code=409, detail="Case is not editable in its current status")
 
     _ensure_draft(db, sow_id)
@@ -287,6 +314,7 @@ def save_draft(sow_id: int, body: DraftSaveIn, db: Session = Depends(get_db)):
                 updated_at = now(),
                 updated_by = :reviewer
             WHERE sow_id = :sow_id
+              AND version = (SELECT MAX(version) FROM sow_review_draft WHERE sow_id = :sow_id)
             """
         ),
         {
@@ -301,15 +329,16 @@ def save_draft(sow_id: int, body: DraftSaveIn, db: Session = Depends(get_db)):
     return build_review_case(db, sow_id)
 
 
-@router.post("/cases/{sow_id}/submit")
-def submit_for_review(sow_id: int, db: Session = Depends(get_db)):
+@router.post("/cases/{job_code}/submit")
+def submit_for_review(job_code: str, db: Session = Depends(get_db)):
+    sow_id = _resolve_sow_id(db, job_code)
     reviewer = _resolve_reviewer_email(db, sow_id, "DRI")
     result = db.execute(
         text(
             """
             UPDATE sow_document
-            SET review_status = 'MANAGER_REVIEW', dri_submitted_at = now(), edited_by = :reviewer
-            WHERE id = :id AND review_status IN ('DRI_REVIEW', 'RETURNED_TO_DRI')
+            SET dri_status = 'approve', manager_status = 'waiting', dri_submitted_at = now(), edited_by = :reviewer
+            WHERE id = :id AND dri_status = 'waiting'
             """
         ),
         {"id": sow_id, "reviewer": reviewer},
@@ -321,8 +350,9 @@ def submit_for_review(sow_id: int, db: Session = Depends(get_db)):
     return build_review_case(db, sow_id)
 
 
-@router.post("/cases/{sow_id}/comments")
-def add_comment(sow_id: int, body: CommentIn, db: Session = Depends(get_db)):
+@router.post("/cases/{job_code}/comments")
+def add_comment(job_code: str, body: CommentIn, db: Session = Depends(get_db)):
+    sow_id = _resolve_sow_id(db, job_code)
     doc = _fetch_doc_status(db, sow_id)
     if not doc:
         raise HTTPException(status_code=404, detail="Case not found")
@@ -340,8 +370,9 @@ def add_comment(sow_id: int, body: CommentIn, db: Session = Depends(get_db)):
     return build_review_case(db, sow_id)
 
 
-@router.post("/cases/{sow_id}/return")
-def return_to_dri(sow_id: int, body: ReturnIn, db: Session = Depends(get_db)):
+@router.post("/cases/{job_code}/return")
+def return_to_dri(job_code: str, body: ReturnIn, db: Session = Depends(get_db)):
+    sow_id = _resolve_sow_id(db, job_code)
     reviewer = _resolve_reviewer_email(db, sow_id, "MANAGER")
     if body.comment:
         db.execute(
@@ -357,8 +388,8 @@ def return_to_dri(sow_id: int, body: ReturnIn, db: Session = Depends(get_db)):
         text(
             """
             UPDATE sow_document
-            SET review_status = 'RETURNED_TO_DRI', manager_reviewed_at = now(), approved_by = :reviewer
-            WHERE id = :id AND review_status = 'MANAGER_REVIEW'
+            SET dri_status = 'waiting', manager_status = 'reject', manager_reviewed_at = now(), approved_by = :reviewer
+            WHERE id = :id AND dri_status = 'approve' AND manager_status = 'waiting'
             """
         ),
         {"id": sow_id, "reviewer": reviewer},
@@ -366,16 +397,29 @@ def return_to_dri(sow_id: int, body: ReturnIn, db: Session = Depends(get_db)):
     if result.rowcount == 0:
         db.rollback()
         raise HTTPException(status_code=409, detail="Case is not awaiting manager review")
+
+    db.execute(
+        text(
+            """
+            INSERT INTO sow_review_draft (sow_id, version, customer_context, project_planning, technical_design)
+            SELECT sow_id, version + 1, customer_context, project_planning, technical_design
+            FROM sow_review_draft
+            WHERE sow_id = :id AND version = (SELECT MAX(version) FROM sow_review_draft WHERE sow_id = :id)
+            """
+        ),
+        {"id": sow_id},
+    )
     db.commit()
     return build_review_case(db, sow_id)
 
 
-@router.post("/cases/{sow_id}/approve")
-def approve_and_publish(sow_id: int, db: Session = Depends(get_db)):
+@router.post("/cases/{job_code}/approve")
+def approve_and_publish(job_code: str, db: Session = Depends(get_db)):
+    sow_id = _resolve_sow_id(db, job_code)
     doc = _fetch_doc_status(db, sow_id)
     if not doc:
         raise HTTPException(status_code=404, detail="Case not found")
-    if doc["review_status"] != "MANAGER_REVIEW":
+    if not (doc["dri_status"] == "approve" and doc["manager_status"] == "waiting"):
         raise HTTPException(status_code=409, detail="Case is not awaiting manager review")
     reviewer = _resolve_reviewer_email(db, sow_id, "MANAGER")
 
@@ -389,7 +433,8 @@ def approve_and_publish(sow_id: int, db: Session = Depends(get_db)):
             """
             INSERT INTO sow_structured_content (sow_id, version, customer_context, project_planning, technical_design)
             SELECT sow_id, :next_version, customer_context, project_planning, technical_design
-            FROM sow_review_draft WHERE sow_id = :id
+            FROM sow_review_draft
+            WHERE sow_id = :id AND version = (SELECT MAX(version) FROM sow_review_draft WHERE sow_id = :id)
             """
         ),
         {"id": sow_id, "next_version": next_version},
@@ -402,8 +447,8 @@ def approve_and_publish(sow_id: int, db: Session = Depends(get_db)):
         text(
             """
             UPDATE sow_document
-            SET review_status = 'PUBLISHED', manager_reviewed_at = now(), approved_by = :reviewer
-            WHERE id = :id AND review_status = 'MANAGER_REVIEW'
+            SET manager_status = 'approve', manager_reviewed_at = now(), approved_by = :reviewer
+            WHERE id = :id AND dri_status = 'approve' AND manager_status = 'waiting'
             """
         ),
         {"id": sow_id, "reviewer": reviewer},
