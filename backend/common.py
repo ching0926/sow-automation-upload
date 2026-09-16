@@ -37,7 +37,7 @@ def fetch_tags(db: Session, sow_id: int) -> dict:
     rows = db.execute(
         text(
             """
-            SELECT t.tag_category, t.tag_name
+            SELECT t.tag_category, t.tag_name, t.category
             FROM sow_tag_relation r
             JOIN tag_definition t ON t.tag_id = r.tag_id
             WHERE r.sow_id = :sow_id AND t.is_active = true
@@ -47,8 +47,12 @@ def fetch_tags(db: Session, sow_id: int) -> dict:
         {"sow_id": sow_id},
     ).mappings().all()
     grouped = {"INDUSTRY": [], "SERVICE_DOMAIN": [], "USE_CASE": [], "TECH_PLATFORM": []}
+    tech_categories = []
     for row in rows:
         grouped.setdefault(row["tag_category"], []).append(row["tag_name"])
+        if row["tag_category"] == "TECH_PLATFORM" and row["category"] and row["category"] not in tech_categories:
+            tech_categories.append(row["category"])
+    grouped["TECH_PLATFORM_CATEGORY"] = tech_categories
     return grouped
 
 
@@ -62,6 +66,17 @@ def fetch_nda_cost(db: Session, job_code: str):
         ),
         {"job_code": job_code},
     ).mappings().first()
+
+
+def fetch_nda_department(db: Session, job_code: str):
+    """依 sow_document.job_code 對照 nda_work_station_apply，取得 DRI 部門名稱，供案例平台的 PM/SA 篩選使用。"""
+    if not job_code:
+        return None
+    row = db.execute(
+        text("SELECT dri_deptname FROM nda_work_station_apply WHERE job_code = :job_code"),
+        {"job_code": job_code},
+    ).mappings().first()
+    return (row["dri_deptname"] if row else None) or None
 
 
 def format_number(value) -> str:

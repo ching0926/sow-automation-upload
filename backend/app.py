@@ -16,6 +16,7 @@ from common import (
     derive_description,
     derive_title,
     fetch_nda_cost,
+    fetch_nda_department,
     fetch_structured_content,
     fetch_tags,
     format_number,
@@ -64,6 +65,8 @@ def build_case(db: Session, doc: dict) -> dict:
         "serviceCategory": tags["SERVICE_DOMAIN"],
         "useCase": tags["USE_CASE"],
         "skills": tags["TECH_PLATFORM"],
+        "techCategory": tags["TECH_PLATFORM_CATEGORY"],
+        "driDepartment": fetch_nda_department(db, doc.get("job_code")),
         "date": doc["created_at"].date().isoformat() if doc["created_at"] else "",
         "creator": doc["edited_by"] or doc["approved_by"] or "—",
         "detail": {
@@ -124,6 +127,24 @@ def get_case(sow_id: int, db: Session = Depends(get_db)):
     if not doc:
         raise HTTPException(status_code=404, detail="Case not found")
     return build_case(db, doc)
+
+
+@app.get("/api/skill-taxonomy")
+def get_skill_taxonomy(db: Session = Depends(get_db)):
+    rows = db.execute(
+        text(
+            """
+            SELECT DISTINCT category, skill_name FROM tag_definition
+            WHERE tag_category = 'TECH_PLATFORM' AND category IS NOT NULL AND skill_name IS NOT NULL
+              AND is_active = true
+            ORDER BY category, skill_name
+            """
+        )
+    ).mappings().all()
+    taxonomy: dict = {}
+    for row in rows:
+        taxonomy.setdefault(row["category"], []).append(row["skill_name"])
+    return taxonomy
 
 
 NDA_API_KEY = os.getenv("NDA_API_KEY")

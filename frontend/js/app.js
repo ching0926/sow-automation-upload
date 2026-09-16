@@ -10,14 +10,21 @@ const ROLE_SECTIONS = {
   pm: ['A', 'B'],
   sa: ['A', 'B', 'C'],
 };
+// 篩選標籤依角色顯示：客戶只看產業別；PM 多一個 DRI 部門；SA 再多 category/skill
+// （category/skill 是 cascading：skill 選項依目前選的 category 動態決定，見 getFilterOptions()）。
+const ROLE_FILTER_DIMS = {
+  customer: ['industry'],
+  pm: ['industry', 'driDepartment'],
+  sa: ['industry', 'driDepartment', 'category', 'skill'],
+};
 const TAB_LABEL_KEY = { A: 'tab_a', B: 'tab_b', C: 'tab_c' };
 
 const state = {
   lang: localStorage.getItem('skb_lang') || 'zh',
   role: localStorage.getItem('skb_role') || 'pm',
   view: 'list',
-  appliedFilters: { industry: [], skill: [] },
-  stagedFilters: { industry: [], skill: [] },
+  appliedFilters: { industry: [], driDepartment: [], category: [], skill: [] },
+  stagedFilters: { industry: [], driDepartment: [], category: [], skill: [] },
   sort: 'new',
   page: 1,
   pageSize: 16,
@@ -45,20 +52,27 @@ function persist() {
 function caseById(id) { return CASES.find(c => c.id === Number(id)); }
 
 function getFilterOptions() {
+  const stagedCategories = state.stagedFilters.category || [];
+  const skillOptions = stagedCategories.length
+    ? [...new Set(stagedCategories.flatMap(cat => SKILL_TAXONOMY[cat] || []))]
+    : [];
   return {
     industry: [...new Set(CASES.map(c => c.industry))],
-    skill: [...new Set(CASES.flatMap(c => c.skills))],
+    driDepartment: [...new Set(CASES.map(c => c.driDepartment).filter(Boolean))],
+    category: Object.keys(SKILL_TAXONOMY),
+    skill: skillOptions,
   };
 }
 
 function optionLabel(dim, code) {
-  if (dim === 'industry') return code;
   if (dim === 'skill') return L('skill', code, state.lang);
   return code;
 }
 
 function matchesFilters(c, f) {
   if (f.industry.length && !f.industry.includes(c.industry)) return false;
+  if (f.driDepartment.length && !f.driDepartment.includes(c.driDepartment)) return false;
+  if (f.category.length && !f.category.some(cat => c.techCategory.includes(cat))) return false;
   if (f.skill.length && !f.skill.some(s => c.skills.includes(s))) return false;
   return true;
 }
@@ -101,8 +115,13 @@ function showView(activeId) {
 // ---------- filter bar ----------
 function renderFilterBar() {
   const opts = getFilterOptions();
-  const dims = ['industry', 'skill'];
-  const labelKeys = { industry: 'filter_industry', skill: 'filter_skill' };
+  const dims = ROLE_FILTER_DIMS[state.role];
+  const labelKeys = {
+    industry: 'filter_industry',
+    driDepartment: 'filter_dri_department',
+    category: 'filter_category',
+    skill: 'filter_skill',
+  };
   const html = dims.map(dim => {
     const selected = state.stagedFilters[dim];
     const chips = selected.map(v => `<span class="chip" data-chip-dim="${dim}" data-chip-value="${v}">${optionLabel(dim, v)}<span class="chip-x" data-remove-dim="${dim}" data-remove-value="${v}">✕</span></span>`).join('');
@@ -422,7 +441,7 @@ function toggleFavorite(id) {
 
 document.addEventListener('DOMContentLoaded', async () => {
   try {
-    await loadCases();
+    await Promise.all([loadCases(), loadSkillTaxonomy()]);
   } catch (err) {
     console.error(err);
   }
@@ -455,8 +474,8 @@ document.addEventListener('DOMContentLoaded', async () => {
 
     // filter clear all
     if (t_.id === 'filter-clear') {
-      state.stagedFilters = { industry: [], skill: [] };
-      state.appliedFilters = { industry: [], skill: [] };
+      Object.keys(state.stagedFilters).forEach(dim => { state.stagedFilters[dim] = []; });
+      Object.keys(state.appliedFilters).forEach(dim => { state.appliedFilters[dim] = []; });
       state.page = 1;
       render(); return;
     }
@@ -508,9 +527,21 @@ document.addEventListener('DOMContentLoaded', async () => {
       const set = new Set(state.stagedFilters[dim]);
       t_.checked ? set.add(val) : set.delete(val);
       state.stagedFilters[dim] = [...set];
+      if (dim === 'category') {
+        // category 一變動，skill 選項跟著改變（cascading），把不再屬於任何已選 category 的 skill 移除
+        const validSkills = new Set(state.stagedFilters.category.flatMap(cat => SKILL_TAXONOMY[cat] || []));
+        state.stagedFilters.skill = state.stagedFilters.skill.filter(s => validSkills.has(s));
+      }
       renderFilterBar(); return;
     }
-    if (t_.id === 'role-select') { state.role = t_.value; persist(); render(); return; }
+    if (t_.id === 'role-select') {
+      state.role = t_.value;
+      const visibleDims = ROLE_FILTER_DIMS[state.role];
+      Object.keys(state.stagedFilters).forEach(dim => {
+        if (!visibleDims.includes(dim)) { state.stagedFilters[dim] = []; state.appliedFilters[dim] = []; }
+      });
+      persist(); render(); return;
+    }
     if (t_.id === 'sort-select') { state.sort = t_.value; render(); return; }
     if (t_.id === 'page-size-select') { state.pageSize = Number(t_.value); state.page = 1; render(); return; }
   });
