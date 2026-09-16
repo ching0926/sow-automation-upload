@@ -37,18 +37,18 @@ def fetch_tags(db: Session, sow_id: int) -> dict:
     rows = db.execute(
         text(
             """
-            SELECT t.category, t.tag_name
+            SELECT t.tag_category, t.tag_name
             FROM sow_tag_relation r
-            JOIN tag_definition t ON t.id = r.tag_id
+            JOIN tag_definition t ON t.tag_id = r.tag_id
             WHERE r.sow_id = :sow_id AND t.is_active = true
-            ORDER BY t.category, t.tag_name
+            ORDER BY t.tag_category, t.tag_name
             """
         ),
         {"sow_id": sow_id},
     ).mappings().all()
     grouped = {"INDUSTRY": [], "SERVICE_DOMAIN": [], "USE_CASE": [], "TECH_PLATFORM": []}
     for row in rows:
-        grouped.setdefault(row["category"], []).append(row["tag_name"])
+        grouped.setdefault(row["tag_category"], []).append(row["tag_name"])
     return grouped
 
 

@@ -101,7 +101,7 @@ def list_cases(db: Session = Depends(get_db)):
             """
             SELECT id, file_name, edited_by, approved_by, created_at, job_code
             FROM sow_document
-            WHERE is_latest = true AND review_status = 'PUBLISHED'
+            WHERE is_latest = true AND dri_status = 'approve' AND manager_status = 'approve'
             ORDER BY created_at DESC
             """
         )
@@ -116,7 +116,7 @@ def get_case(sow_id: int, db: Session = Depends(get_db)):
             """
             SELECT id, file_name, edited_by, approved_by, created_at, job_code
             FROM sow_document
-            WHERE id = :id AND review_status = 'PUBLISHED'
+            WHERE id = :id AND dri_status = 'approve' AND manager_status = 'approve'
             """
         ),
         {"id": sow_id},
