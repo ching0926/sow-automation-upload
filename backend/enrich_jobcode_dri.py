@@ -1,6 +1,6 @@
 """
-批次腳本：對 nda_work_station_apply 裡還缺 dri/dri_manager/estimated_mandays/total_cost
-的 job_code，呼叫 Nebula API 查詢後回填。可重複執行——只處理欄位還是 NULL 的資料列。
+批次腳本：對 nda_work_station_apply 裡還缺 dri_mail/manager_mail/estimated_mandays/total_cost
+（或其他明細欄位）的 job_code，呼叫 Nebula API 查詢後回填。可重複執行——只處理欄位還是 NULL 的資料列。
 """
 import json
 import os
@@ -62,7 +62,11 @@ def main():
             text(
                 """
                 SELECT job_code FROM nda_work_station_apply
-                WHERE dri IS NULL OR dri_manager IS NULL
+                WHERE dri_mail IS NULL OR manager_mail IS NULL
+                   OR dri_name IS NULL OR dri_fullname IS NULL
+                   OR dri_deptno IS NULL OR dri_deptname IS NULL
+                   OR manager_name IS NULL OR manager_fullname IS NULL
+                   OR manager_deptno IS NULL OR manager_deptname IS NULL
                    OR estimated_mandays IS NULL OR total_cost IS NULL
                 """
             )
@@ -83,8 +87,10 @@ def main():
                 continue
 
             user_job_info = data.get("userJobInfo") or []
-            dri = user_job_info[0]["companyEmail"] if len(user_job_info) > 0 else None
-            dri_manager = user_job_info[1]["companyEmail"] if len(user_job_info) > 1 else None
+            dri_info = user_job_info[0] if len(user_job_info) > 0 else {}
+            manager_info = user_job_info[1] if len(user_job_info) > 1 else {}
+            dri_mail = dri_info.get("companyEmail")
+            manager_mail = manager_info.get("companyEmail")
 
             db.execute(
                 text(
@@ -92,8 +98,16 @@ def main():
                     UPDATE nda_work_station_apply
                     SET estimated_mandays = :mandays,
                         total_cost = :cost,
-                        dri = :dri,
-                        dri_manager = :dri_manager,
+                        dri_mail = :dri_mail,
+                        dri_deptno = :dri_deptno,
+                        dri_deptname = :dri_deptname,
+                        dri_name = :dri_name,
+                        dri_fullname = :dri_fullname,
+                        manager_mail = :manager_mail,
+                        manager_deptno = :manager_deptno,
+                        manager_deptname = :manager_deptname,
+                        manager_name = :manager_name,
+                        manager_fullname = :manager_fullname,
                         updated_at = now()
                     WHERE job_code = :job_code
                     """
@@ -101,13 +115,21 @@ def main():
                 {
                     "mandays": data.get("estimatedMandays"),
                     "cost": data.get("totalCost"),
-                    "dri": dri,
-                    "dri_manager": dri_manager,
+                    "dri_mail": dri_mail,
+                    "dri_deptno": dri_info.get("deptNo"),
+                    "dri_deptname": dri_info.get("deptName"),
+                    "dri_name": dri_info.get("userName"),
+                    "dri_fullname": dri_info.get("userFullName"),
+                    "manager_mail": manager_mail,
+                    "manager_deptno": manager_info.get("deptNo"),
+                    "manager_deptname": manager_info.get("deptName"),
+                    "manager_name": manager_info.get("userName"),
+                    "manager_fullname": manager_info.get("userFullName"),
                     "job_code": job_code,
                 },
             )
             db.commit()
-            print(f"  [OK] {job_code}: mandays={data.get('estimatedMandays')} cost={data.get('totalCost')} dri={dri} dri_manager={dri_manager}")
+            print(f"  [OK] {job_code}: mandays={data.get('estimatedMandays')} cost={data.get('totalCost')} dri_mail={dri_mail} manager_mail={manager_mail}")
             success += 1
 
         print(f"完成：成功 {success} 筆，失敗 {failed} 筆。")
