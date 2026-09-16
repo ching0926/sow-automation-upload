@@ -1,5 +1,5 @@
 // SOW 審查頁面的後端 API client。
-// 對應 backend/review.py 的 /api/review/cases/{sow_id} 系列端點。
+// 對應 backend/review.py 的 /api/review/cases/{job_code} 系列端點。
 // 回應資料每個可編輯欄位都已是 { original, current, savedAt } 形狀，
 // 欄位命名對齊 frontend 的 detail.A/B/C 結構、也對齊本頁 FIELD_DEFS。
 
@@ -23,26 +23,26 @@ async function apiRequest(method, url, body) {
   return payload;
 }
 
-function apiGetReviewCase(sowId) {
-  return apiRequest('GET', `/api/review/cases/${sowId}`);
+function apiGetReviewCase(jobCode) {
+  return apiRequest('GET', `/api/review/cases/${jobCode}`);
 }
 
-function apiSaveDraft(sowId, body) {
-  return apiRequest('PUT', `/api/review/cases/${sowId}/draft`, body);
+function apiSaveDraft(jobCode, body) {
+  return apiRequest('PUT', `/api/review/cases/${jobCode}/draft`, body);
 }
 
-function apiSubmitReview(sowId, body) {
-  return apiRequest('POST', `/api/review/cases/${sowId}/submit`, body);
+function apiSubmitReview(jobCode, body) {
+  return apiRequest('POST', `/api/review/cases/${jobCode}/submit`, body);
 }
 
-function apiAddComment(sowId, body) {
-  return apiRequest('POST', `/api/review/cases/${sowId}/comments`, body);
+function apiAddComment(jobCode, body) {
+  return apiRequest('POST', `/api/review/cases/${jobCode}/comments`, body);
 }
 
-function apiReturnToDri(sowId, body) {
-  return apiRequest('POST', `/api/review/cases/${sowId}/return`, body);
+function apiReturnToDri(jobCode, body) {
+  return apiRequest('POST', `/api/review/cases/${jobCode}/return`, body);
 }
 
-function apiApprove(sowId, body) {
-  return apiRequest('POST', `/api/review/cases/${sowId}/approve`, body);
+function apiApprove(jobCode, body) {
+  return apiRequest('POST', `/api/review/cases/${jobCode}/approve`, body);
 }

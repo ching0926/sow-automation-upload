@@ -1,7 +1,7 @@
 // SOW 審查頁面邏輯。獨立於 frontend/js/app.js 維護，靠 window.REVIEW_MODE
 // ('dri' | 'manager') 區分 dri.html / manager.html 兩個頁面該怎麼渲染同一份資料模型。
-// 案例資料一律來自 backend/review.py 的 /api/review/cases/{sow_id} 系列端點，
-// 案例 id 從網址 ?id= 讀取。
+// 案例資料一律來自 backend/review.py 的 /api/review/cases/{job_code} 系列端點，
+// 案例 job_code 從網址 ?jobcode= 讀取。
 
 const TAB_ORDER = ['A', 'B', 'C'];
 const TAB_LABEL = { A: '客戶脈絡與價值', B: '專案規劃與交付', C: '技術設計與架構' };
@@ -41,7 +41,7 @@ const STATUS_CLASS = {
 };
 
 const MODE = window.REVIEW_MODE === 'manager' ? 'manager' : 'dri';
-const SOW_ID = new URLSearchParams(location.search).get('id');
+const JOB_CODE = new URLSearchParams(location.search).get('jobcode');
 
 const state = {
   tab: 'A',
@@ -281,7 +281,7 @@ function render() {
 // ---------- actions ----------
 async function saveAll() {
   try {
-    state.case = await apiSaveDraft(SOW_ID, buildDraftPayload());
+    state.case = await apiSaveDraft(JOB_CODE, buildDraftPayload());
     state.dirty.clear();
     render();
     showToast('已儲存');
@@ -293,8 +293,8 @@ async function saveAll() {
 async function submitReview() {
   try {
     // 先存檔，避免 DRI 忘記按「儲存」就直接送出，導致最後一次編輯遺失
-    await apiSaveDraft(SOW_ID, buildDraftPayload());
-    state.case = await apiSubmitReview(SOW_ID);
+    await apiSaveDraft(JOB_CODE, buildDraftPayload());
+    state.case = await apiSubmitReview(JOB_CODE);
     state.dirty.clear();
     render();
     showToast('已送出主管審查');
@@ -308,7 +308,7 @@ async function returnToDri() {
   const reason = prompt('退回理由（選填，留空可直接送出）：', '');
   if (reason === null) return;
   try {
-    state.case = await apiReturnToDri(SOW_ID, { comment: reason || undefined });
+    state.case = await apiReturnToDri(JOB_CODE, { comment: reason || undefined });
     render();
     showToast('已退回 DRI 修改');
   } catch (e) {
@@ -319,7 +319,7 @@ async function returnToDri() {
 async function approveAndPublish() {
   if (!confirm('確定要核准並發布到案例庫嗎？')) return;
   try {
-    state.case = await apiApprove(SOW_ID);
+    state.case = await apiApprove(JOB_CODE);
     render();
     showToast('已核准並發布至案例庫');
   } catch (e) {
@@ -335,7 +335,7 @@ async function submitComment() {
     return;
   }
   try {
-    state.case = await apiAddComment(SOW_ID, { authorRole: MODE === 'dri' ? 'DRI' : 'MANAGER', body: text });
+    state.case = await apiAddComment(JOB_CODE, { authorRole: MODE === 'dri' ? 'DRI' : 'MANAGER', body: text });
     render();
     showToast('已送出留言');
   } catch (e) {
@@ -345,14 +345,14 @@ async function submitComment() {
 
 // ---------- init ----------
 async function init() {
-  if (!SOW_ID || !/^\d+$/.test(SOW_ID)) {
-    document.getElementById('review-content').innerHTML = '<div class="section-heading">缺少或無效的案例 ID，請確認連結是否完整。</div>';
+  if (!JOB_CODE) {
+    document.getElementById('review-content').innerHTML = '<div class="section-heading">缺少案例 Job Code，請確認連結是否完整。</div>';
     return;
   }
 
   document.getElementById('review-content').innerHTML = '<div class="section-heading">載入中…</div>';
   try {
-    state.case = await apiGetReviewCase(SOW_ID);
+    state.case = await apiGetReviewCase(JOB_CODE);
   } catch (e) {
     document.getElementById('review-content').innerHTML = `<div class="section-heading">載入失敗：${escapeHtml(e.message)}</div>`;
     return;

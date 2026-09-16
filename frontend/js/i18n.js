@@ -8,7 +8,7 @@ const I18N = {
     nav_recent: '最近瀏覽',
     search_placeholder: '搜尋案例、產業、技術成果關鍵字...',
     filter_industry: '產業類別',
-    filter_skill: '技能 Skills',
+    filter_skill: '技術能力',
     filter_clear: '重設 Clear All',
     filter_apply: '確定篩選 Apply',
     total_count: (n) => `共 ${n} 筆案例`,
