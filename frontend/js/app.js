@@ -32,6 +32,7 @@ const state = {
   previewId: null,
   previewTab: 'A',
   interestModal: null, // null | 'confirm' | 'result'
+  interestForm: { email: '', message: '', error: null },
   favorites: new Set(JSON.parse(localStorage.getItem('skb_favorites') || '[]')),
   recent: JSON.parse(localStorage.getItem('skb_recent') || '[]'),
 };
@@ -424,23 +425,31 @@ function renderPanel() {
 }
 
 // ---------- interest modal（Customer 角色專屬的「我有興趣」流程） ----------
-// 卡片內容是設計稿裡的固定示意文字，刻意不對應目前開啟的真實案例資料。
-function interestItemCardHtml() {
+function interestItemCardHtml(c) {
   return `
     <div class="modal-case-card">
       <div class="modal-item-label">${t(state.lang, 'interest_item_label')}</div>
-      <div class="modal-case-title">${t(state.lang, 'interest_item_title')}</div>
-      <div class="modal-case-subtitle">${t(state.lang, 'interest_item_subtitle')}</div>
+      <div class="modal-case-title">${c.contactItemName}</div>
     </div>`;
 }
 
-function interestConfirmModalHtml() {
+function interestConfirmModalHtml(c) {
+  const f = state.interestForm;
   return `
     <div class="modal-card">
       <div class="modal-icon-circle confirm">♡</div>
       <div class="modal-title">${t(state.lang, 'interest_confirm_title')}</div>
       <div class="modal-desc">${t(state.lang, 'interest_confirm_desc')}</div>
-      ${interestItemCardHtml()}
+      ${interestItemCardHtml(c)}
+      <div class="modal-field">
+        <label class="modal-field-label">${t(state.lang, 'interest_email_label')}<span class="required">*</span></label>
+        <input type="email" class="modal-input" id="interest-email-input" placeholder="${t(state.lang, 'interest_email_placeholder')}" value="${f.email}">
+        ${f.error ? `<div class="modal-field-error">${f.error}</div>` : ''}
+      </div>
+      <div class="modal-field">
+        <label class="modal-field-label">${t(state.lang, 'interest_message_label')}</label>
+        <textarea class="modal-textarea" id="interest-message-input" placeholder="${t(state.lang, 'interest_message_placeholder')}">${f.message}</textarea>
+      </div>
       <div class="modal-actions">
         <button class="btn btn-ghost" id="interest-cancel-btn">${t(state.lang, 'interest_cancel')}</button>
         <button class="btn btn-primary" id="interest-confirm-submit-btn">${t(state.lang, 'interest_confirm_submit')}</button>
@@ -448,13 +457,13 @@ function interestConfirmModalHtml() {
     </div>`;
 }
 
-function interestResultModalHtml() {
+function interestResultModalHtml(c) {
   return `
     <div class="modal-card">
       <div class="modal-icon-circle result">✓</div>
       <div class="modal-title">${t(state.lang, 'interest_result_title')}</div>
       <div class="modal-desc">${t(state.lang, 'interest_result_desc')}</div>
-      ${interestItemCardHtml()}
+      ${interestItemCardHtml(c)}
       <div class="modal-actions single">
         <button class="btn btn-primary" id="interest-result-close-btn">${t(state.lang, 'interest_result_close')}</button>
       </div>
@@ -468,8 +477,35 @@ function renderInterestModal() {
     el.innerHTML = '';
     return;
   }
+  const c = caseById(state.previewId);
   el.classList.remove('hidden');
-  el.innerHTML = state.interestModal === 'confirm' ? interestConfirmModalHtml() : interestResultModalHtml();
+  el.innerHTML = state.interestModal === 'confirm' ? interestConfirmModalHtml(c) : interestResultModalHtml(c);
+}
+
+const EMAIL_RE = /^[^@\s]+@[^@\s]+\.[^@\s]+$/;
+
+async function submitInterest() {
+  const email = state.interestForm.email.trim();
+  if (!EMAIL_RE.test(email)) {
+    state.interestForm.error = t(state.lang, 'interest_email_error');
+    renderInterestModal();
+    return;
+  }
+  state.interestForm.error = null;
+  try {
+    const res = await fetch(`/api/cases/${state.previewId}/interest`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ email, message: state.interestForm.message.trim() }),
+    });
+    if (!res.ok) throw new Error(`submit failed: ${res.status}`);
+    state.interestModal = 'result';
+    renderInterestModal();
+  } catch (err) {
+    console.error(err);
+    state.interestForm.error = t(state.lang, 'interest_submit_error');
+    renderInterestModal();
+  }
 }
 
 // ---------- master render ----------
@@ -485,9 +521,13 @@ function render() {
 }
 
 // ---------- events ----------
+function resetInterestForm() {
+  state.interestForm = { email: '', message: '', error: null };
+}
 function openPanel(id) {
   state.previewId = Number(id);
   state.interestModal = null;
+  resetInterestForm();
   addToRecent(Number(id));
   render();
 }
@@ -573,10 +613,10 @@ document.addEventListener('DOMContentLoaded', async () => {
     }
 
     // interest modal
-    if (t_.id === 'interest-open-btn') { state.interestModal = 'confirm'; renderInterestModal(); return; }
-    if (t_.id === 'interest-cancel-btn') { state.interestModal = null; renderInterestModal(); return; }
-    if (t_.id === 'interest-confirm-submit-btn') { state.interestModal = 'result'; renderInterestModal(); return; }
-    if (t_.id === 'interest-result-close-btn') { state.interestModal = null; renderInterestModal(); return; }
+    if (t_.id === 'interest-open-btn') { state.interestModal = 'confirm'; resetInterestForm(); renderInterestModal(); return; }
+    if (t_.id === 'interest-cancel-btn') { state.interestModal = null; resetInterestForm(); renderInterestModal(); return; }
+    if (t_.id === 'interest-confirm-submit-btn') { submitInterest(); return; }
+    if (t_.id === 'interest-result-close-btn') { state.interestModal = null; resetInterestForm(); renderInterestModal(); return; }
 
     // card click -> open panel (ignore clicks on star, already handled above)
     const card = t_.closest('.case-card');
@@ -616,5 +656,10 @@ document.addEventListener('DOMContentLoaded', async () => {
     state.search = e.target.value;
     state.page = 1;
     render();
+  });
+
+  document.addEventListener('input', (e) => {
+    if (e.target.id === 'interest-email-input') { state.interestForm.email = e.target.value; return; }
+    if (e.target.id === 'interest-message-input') { state.interestForm.message = e.target.value; return; }
   });
 });

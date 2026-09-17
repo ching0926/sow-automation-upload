@@ -275,6 +275,15 @@ button { font-family: inherit; cursor: pointer; }
 .modal-case-card { border: 1px solid var(--border); border-radius: 8px; background: var(--bg); padding: 12px; margin-bottom: 20px; text-align: left; }
 .modal-case-title { font-size: 14px; font-weight: 700; margin-bottom: 4px; }
 .modal-case-subtitle { font-size: 13px; color: var(--text-muted); }
+.modal-field { margin-bottom: 16px; }
+.modal-field-label { font-size: 13px; font-weight: 600; margin: 4px 0 6px; display: block; }
+.modal-field-label .required { color: #dc2626; margin-left: 2px; }
+.modal-input, .modal-textarea {
+  width: 100%; border: 1px solid var(--border); border-radius: 8px; padding: 10px 12px;
+  font-size: 13px; font-family: inherit; background: white;
+}
+.modal-textarea { resize: vertical; min-height: 70px; }
+.modal-field-error { color: #dc2626; font-size: 12px; margin-top: 4px; }
 .modal-actions { display: flex; gap: 10px; }
 .modal-actions .btn { flex: 1; }
 .modal-actions.single .btn { flex: none; width: 100%; }

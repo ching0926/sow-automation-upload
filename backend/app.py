@@ -1,7 +1,9 @@
 import os
+import re
 
 from fastapi import Depends, FastAPI, Header, HTTPException
 from fastapi.staticfiles import StaticFiles
+from pydantic import BaseModel
 from sqlalchemy import text
 from sqlalchemy.orm import Session
 from mangum import Mangum
@@ -13,6 +15,7 @@ from common import (
     INDUSTRY_ICON,
     REVIEW_FRONTEND_DIR,
     bi,
+    derive_contact_item_name,
     derive_description,
     derive_title,
     fetch_nda_cost,
@@ -24,6 +27,13 @@ from common import (
 from review import router as review_router
 
 app = FastAPI(title="SOW Knowledge Base API")
+
+EMAIL_RE = re.compile(r"^[^@\s]+@[^@\s]+\.[^@\s]+$")
+
+
+class InterestRequest(BaseModel):
+    email: str
+    message: str | None = None
 
 
 def build_case(db: Session, doc: dict) -> dict:
@@ -62,6 +72,7 @@ def build_case(db: Session, doc: dict) -> dict:
         "icon": INDUSTRY_ICON.get(industry, DEFAULT_ICON),
         "title": bi(derive_title(doc["file_name"])),
         "description": bi(derive_description(customer_context)),
+        "contactItemName": derive_contact_item_name(doc["file_name"]),
         "serviceCategory": tags["SERVICE_DOMAIN"],
         "useCase": tags["USE_CASE"],
         "skills": tags["TECH_PLATFORM"],
@@ -127,6 +138,25 @@ def get_case(sow_id: int, db: Session = Depends(get_db)):
     if not doc:
         raise HTTPException(status_code=404, detail="Case not found")
     return build_case(db, doc)
+
+
+@app.post("/api/cases/{sow_id}/interest")
+def submit_interest(sow_id: int, body: InterestRequest, db: Session = Depends(get_db)):
+    if not body.email or not EMAIL_RE.match(body.email.strip()):
+        raise HTTPException(status_code=422, detail="Invalid email")
+    exists = db.execute(text("SELECT 1 FROM sow_document WHERE id = :id"), {"id": sow_id}).first()
+    if not exists:
+        raise HTTPException(status_code=404, detail="Case not found")
+    customer_id = db.execute(
+        text("INSERT INTO customer (email, comment) VALUES (:email, :comment) RETURNING id"),
+        {"email": body.email.strip(), "comment": (body.message or "").strip() or None},
+    ).scalar()
+    db.execute(
+        text("INSERT INTO sow_customer_interest (customer_id, sow_id) VALUES (:cid, :sid)"),
+        {"cid": customer_id, "sid": sow_id},
+    )
+    db.commit()
+    return {"ok": True}
 
 
 @app.get("/api/skill-taxonomy")

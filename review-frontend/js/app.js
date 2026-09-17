@@ -34,7 +34,7 @@ const STATUS_LABEL = {
   PUBLISHED: '已發布',
 };
 const STATUS_CLASS = {
-  DRI_REVIEW: '',
+  DRI_REVIEW: 'status-manager',
   MANAGER_REVIEW: 'status-manager',
   RETURNED_TO_DRI: 'status-returned',
   PUBLISHED: 'status-published',
@@ -47,6 +47,13 @@ const state = {
   tab: 'A',
   case: null,
   dirty: new Set(), // 例如 "A.challenge"、"A.kpis.0.value"，代表已編輯但尚未儲存
+};
+
+// 留言區的暫存 UI 狀態（不需要存進 state.case，畫面重繪就可以重置）
+const commentUi = {
+  openMenuId: null, // 目前打開「⋮」選單的留言 id
+  editingId: null,  // 目前處於編輯模式的留言 id
+  drafts: {},       // sectionKey -> 尚未送出的新留言草稿文字
 };
 
 function escapeHtml(s) {
@@ -140,40 +147,69 @@ function renderFieldDri(tab, def) {
     ? '<span class="field-hint">（每行一項）</span>'
     : ndaLocked ? '<span class="field-hint">（依 NDA 工作站資料鎖定，不可編輯）</span>' : '';
 
+  let editorHtml;
   if (def.type === 'list') {
     const val = (f.current || []).join('\n');
     const autosizeCls = tab === 'C' ? ' autosize' : '';
-    return `<div class="field-block ${dirty ? 'dirty' : ''}">
-      <label class="field-label">${def.label} ${hint}</label>
-      <textarea class="field-textarea${autosizeCls}" data-path="${path}" data-type="list" ${disabledAttr}>${escapeHtml(val)}</textarea>
-    </div>`;
-  }
-  if (def.type === 'textarea') {
-    return `<div class="field-block ${dirty ? 'dirty' : ''}">
-      <label class="field-label">${def.label}</label>
-      <textarea class="field-textarea" data-path="${path}" data-type="text" ${disabledAttr}>${escapeHtml(f.current)}</textarea>
-    </div>`;
-  }
-  return `<div class="field-block ${dirty ? 'dirty' : ''}">
-    <label class="field-label">${def.label} ${hint}</label>
-    <div class="field-input-row">
+    editorHtml = `<textarea class="field-textarea${autosizeCls}" data-path="${path}" data-type="list" ${disabledAttr}>${escapeHtml(val)}</textarea>`;
+  } else if (def.type === 'textarea') {
+    editorHtml = `<textarea class="field-textarea" data-path="${path}" data-type="text" ${disabledAttr}>${escapeHtml(f.current)}</textarea>`;
+  } else {
+    editorHtml = `<div class="field-input-row">
       <input class="field-input" data-path="${path}" data-type="text" value="${escapeAttr(f.current)}" ${disabledAttr} />
       ${def.unit ? `<span class="field-unit">${def.unit}</span>` : ''}
+    </div>`;
+  }
+
+  const hasDiff = JSON.stringify(f.current) !== JSON.stringify(f.original);
+
+  return `<div class="field-row">
+    <div class="field-block ${dirty ? 'dirty' : ''}">
+      <label class="field-label">${def.label} ${hint}</label>
+      ${editorHtml}
+    </div>
+    <div class="side-panel">
+      <div class="changelog-card">
+        <div class="changelog-title">📄 變更記錄</div>
+        ${ndaLocked ? `
+          <div class="diff-none">此數值採用 NDA 工作站申請的權威資料，與 DRI 編輯無關</div>
+        ` : `
+          <div class="changelog-time">DRI 修改於 ${f.savedAt || '—'}</div>
+          ${!hasDiff ? '<div class="diff-none">無修改</div>' : ''}
+        `}
+      </div>
+      ${renderCommentThread(path)}
     </div>
   </div>`;
 }
 
 function renderKpiSectionDri() {
   const disabledAttr = fieldEditable() ? '' : 'disabled';
-  return `<div class="field-block">
-    <label class="field-label">關鍵成效指標 (KPIs)</label>
-    <div class="kpi-row">
-      ${state.case.detail.A.kpis.map((k, i) => `
-        <div class="kpi-card">
-          <div class="kpi-icon">${k.icon}</div>
-          <input class="kpi-value-input" data-kpi-idx="${i}" data-kpi-field="value" value="${escapeAttr(k.value.current)}" ${disabledAttr} />
-          <input class="kpi-label-input" data-kpi-idx="${i}" data-kpi-field="label" value="${escapeAttr(k.label.current)}" ${disabledAttr} />
-        </div>`).join('')}
+  const kpis = state.case.detail.A.kpis;
+  return `<div class="field-row">
+    <div class="field-block">
+      <label class="field-label">關鍵成效指標 (KPIs)</label>
+      <div class="kpi-row">
+        ${kpis.map((k, i) => `
+          <div class="kpi-card">
+            <div class="kpi-icon">${k.icon}</div>
+            <input class="kpi-value-input" data-kpi-idx="${i}" data-kpi-field="value" value="${escapeAttr(k.value.current)}" ${disabledAttr} />
+            <input class="kpi-label-input" data-kpi-idx="${i}" data-kpi-field="label" value="${escapeAttr(k.label.current)}" ${disabledAttr} />
+          </div>`).join('')}
+      </div>
+    </div>
+    <div class="side-panel">
+      <div class="changelog-card">
+        <div class="changelog-title">📄 變更記錄</div>
+        ${kpis.map((k, i) => {
+          const hasDiff = k.value.current !== k.value.original || k.label.current !== k.label.original;
+          return `<div class="kpi-changelog-item">
+            <div class="diff-label-inline">KPI ${i + 1}｜DRI 修改於 ${k.savedAt || '—'}</div>
+            ${!hasDiff ? '<div class="diff-none">無修改</div>' : ''}
+          </div>`;
+        }).join('')}
+      </div>
+      ${renderCommentThread('A.kpis')}
     </div>
   </div>`;
 }
@@ -183,7 +219,6 @@ function renderFieldManager(tab, def) {
   const f = state.case.detail[tab][def.key];
   const isList = def.type === 'list';
   const currentDisplay = isList ? (f.current || []).join('、') : f.current;
-  const originalDisplay = isList ? (f.original || []).join('、') : f.original;
   const hasDiff = JSON.stringify(f.current) !== JSON.stringify(f.original);
   const ndaLocked = f.source === 'nda';
 
@@ -192,17 +227,17 @@ function renderFieldManager(tab, def) {
       <label class="field-label">${def.label}</label>
       <div class="section-card"><p>${escapeHtml(currentDisplay)}</p></div>
     </div>
-    <div class="changelog-card">
-      <div class="changelog-title">變更記錄</div>
-      ${ndaLocked ? `
-        <div class="diff-none">此數值採用 NDA 工作站申請的權威資料，與 DRI 編輯無關</div>
-      ` : `
-        <div class="changelog-time">DRI 修改於 ${f.savedAt || '—'}</div>
-        ${hasDiff ? `
-          <div class="diff-before"><span class="diff-label">原內容：</span>${escapeHtml(originalDisplay)}</div>
-          <div class="diff-after"><span class="diff-label">修改後：</span>${escapeHtml(currentDisplay)}</div>
-        ` : '<div class="diff-none">無修改</div>'}
-      `}
+    <div class="side-panel">
+      <div class="changelog-card">
+        <div class="changelog-title">📄 變更記錄</div>
+        ${ndaLocked ? `
+          <div class="diff-none">此數值採用 NDA 工作站申請的權威資料，與 DRI 編輯無關</div>
+        ` : `
+          <div class="changelog-time">DRI 修改於 ${f.savedAt || '—'}</div>
+          ${!hasDiff ? '<div class="diff-none">無修改</div>' : ''}
+        `}
+      </div>
+      ${renderCommentThread(`${tab}.${def.key}`)}
     </div>
   </div>`;
 }
@@ -221,20 +256,92 @@ function renderKpiSectionManager() {
           </div>`).join('')}
       </div>
     </div>
-    <div class="changelog-card">
-      <div class="changelog-title">變更記錄</div>
-      ${kpis.map((k, i) => {
-        const hasDiff = k.value.current !== k.value.original || k.label.current !== k.label.original;
-        return `<div class="kpi-changelog-item">
-          <div class="diff-label-inline">KPI ${i + 1}｜DRI 修改於 ${k.savedAt || '—'}</div>
-          ${hasDiff ? `
-            <div class="diff-before"><span class="diff-label">原內容：</span>${escapeHtml(k.value.original)} ${escapeHtml(k.label.original)}</div>
-            <div class="diff-after"><span class="diff-label">修改後：</span>${escapeHtml(k.value.current)} ${escapeHtml(k.label.current)}</div>
-          ` : '<div class="diff-none">無修改</div>'}
-        </div>`;
-      }).join('')}
+    <div class="side-panel">
+      <div class="changelog-card">
+        <div class="changelog-title">📄 變更記錄</div>
+        ${kpis.map((k, i) => {
+          const hasDiff = k.value.current !== k.value.original || k.label.current !== k.label.original;
+          return `<div class="kpi-changelog-item">
+            <div class="diff-label-inline">KPI ${i + 1}｜DRI 修改於 ${k.savedAt || '—'}</div>
+            ${!hasDiff ? '<div class="diff-none">無修改</div>' : ''}
+          </div>`;
+        }).join('')}
+      </div>
+      ${renderCommentThread('A.kpis')}
     </div>
   </div>`;
+}
+
+// ---------- 留言串（DRI／主管，每個 block 各自最多一則） ----------
+function sectionKeyForComment(id) {
+  const c = (state.case.comments || []).find((x) => x.id === id);
+  return c ? c.sectionKey : null;
+}
+
+function renderCommentThread(sectionKey) {
+  const comments = (state.case.comments || []).filter((c) => c.sectionKey === sectionKey);
+  const dri = comments.find((c) => c.authorRole === 'DRI');
+  const manager = comments.find((c) => c.authorRole === 'MANAGER');
+  const myRole = MODE === 'dri' ? 'DRI' : 'MANAGER';
+  const mine = myRole === 'DRI' ? dri : manager;
+
+  const bubble = (c) => {
+    if (!c) return '';
+    const isMine = c.authorRole === myRole;
+    const roleLabel = c.authorRole === 'DRI' ? 'DRI 留言' : '主管留言';
+    const wasEdited = c.updatedAt && c.updatedAt !== c.createdAt;
+    const timeLabel = wasEdited ? `${c.updatedAt}（已編輯）` : c.createdAt;
+
+    if (commentUi.editingId === c.id) {
+      return `<div class="comment-item comment-item-${c.authorRole.toLowerCase()}" data-comment-id="${c.id}">
+        <div class="comment-body">
+          <textarea class="comment-edit-textarea" data-comment-id="${c.id}" maxlength="300">${escapeHtml(c.body)}</textarea>
+          <div class="comment-char-count" data-count-for="${c.id}">${c.body.length}/300</div>
+          <div class="comment-edit-actions">
+            <button class="btn btn-ghost btn-sm" data-comment-action="cancel-edit" data-comment-id="${c.id}">取消</button>
+            <button class="btn btn-primary btn-sm" data-comment-action="save-edit" data-comment-id="${c.id}">儲存</button>
+          </div>
+        </div>
+      </div>`;
+    }
+    return `<div class="comment-item comment-item-${c.authorRole.toLowerCase()}" data-comment-id="${c.id}">
+      <div class="comment-body">
+        <div class="comment-meta"><span class="comment-role">${roleLabel}</span><span class="comment-time">${timeLabel}</span></div>
+        <div class="comment-text">${escapeHtml(c.body)}</div>
+      </div>
+      ${isMine ? `
+        <div class="comment-kebab-wrap">
+          <button class="comment-kebab-btn" data-comment-action="toggle-menu" data-comment-id="${c.id}">⋮</button>
+          ${commentUi.openMenuId === c.id ? `
+            <div class="comment-kebab-menu">
+              <button data-comment-action="start-edit" data-comment-id="${c.id}">✏️ 編輯留言</button>
+              <button class="comment-kebab-danger" data-comment-action="delete" data-comment-id="${c.id}">🗑️ 刪除留言</button>
+            </div>` : ''}
+        </div>` : ''}
+    </div>`;
+  };
+
+  const roleLabelForInput = myRole === 'DRI' ? 'DRI 留言' : '主管留言';
+  const draftVal = commentUi.drafts[sectionKey] || '';
+  const inputRow = mine ? '' : `
+    <div class="comment-input-row" data-section="${sectionKey}">
+      <label class="comment-input-label">${roleLabelForInput}</label>
+      <textarea class="comment-new-textarea" data-section="${sectionKey}" maxlength="300" placeholder="請輸入…">${escapeHtml(draftVal)}</textarea>
+      <div class="comment-input-footer">
+        <span class="comment-char-count" data-count-for="new-${sectionKey}">${draftVal.length}/300</span>
+        <button class="btn btn-primary btn-sm comment-submit-btn ${draftVal.trim() ? '' : 'hidden'}" data-comment-action="submit" data-section="${sectionKey}">送出</button>
+      </div>
+    </div>`;
+
+  return `<div class="comment-thread" data-section="${sectionKey}">
+    ${bubble(dri)}${bubble(manager)}${inputRow}
+  </div>`;
+}
+
+function refreshCommentThread(sectionKey) {
+  if (!sectionKey) return;
+  const el = document.querySelector(`.comment-thread[data-section="${CSS.escape(sectionKey)}"]`);
+  if (el) el.outerHTML = renderCommentThread(sectionKey);
 }
 
 function autoGrowTextarea(el) {
@@ -258,6 +365,8 @@ function renderContent() {
 }
 
 function render() {
+  commentUi.openMenuId = null;
+  commentUi.editingId = null;
   renderTopbar();
   renderMetaBar();
   renderTabs();
@@ -299,6 +408,47 @@ async function returnToDri() {
     showToast('已退回 DRI 修改');
   } catch (e) {
     showToast(e.message || '退回失敗');
+  }
+}
+
+async function submitNewComment(sectionKey) {
+  const body = (commentUi.drafts[sectionKey] || '').trim();
+  if (!body) return;
+  const authorRole = MODE === 'dri' ? 'DRI' : 'MANAGER';
+  try {
+    state.case = await apiAddComment(JOB_CODE, { authorRole, body, sectionKey });
+    delete commentUi.drafts[sectionKey];
+    refreshCommentThread(sectionKey);
+  } catch (e) {
+    showToast(e.message || '留言送出失敗');
+  }
+}
+
+async function saveCommentEdit(id) {
+  const textarea = document.querySelector(`.comment-edit-textarea[data-comment-id="${id}"]`);
+  const body = (textarea ? textarea.value : '').trim();
+  if (!body) { showToast('留言內容不可為空'); return; }
+  const authorRole = MODE === 'dri' ? 'DRI' : 'MANAGER';
+  const sectionKey = sectionKeyForComment(id);
+  try {
+    state.case = await apiUpdateComment(JOB_CODE, id, { authorRole, body });
+    commentUi.editingId = null;
+    refreshCommentThread(sectionKey);
+  } catch (e) {
+    showToast(e.message || '留言更新失敗');
+  }
+}
+
+async function deleteComment(id) {
+  if (!confirm('確定要捨棄這則留言嗎？')) return;
+  const authorRole = MODE === 'dri' ? 'DRI' : 'MANAGER';
+  const sectionKey = sectionKeyForComment(id);
+  try {
+    state.case = await apiDeleteComment(JOB_CODE, id, { authorRole });
+    commentUi.openMenuId = null;
+    refreshCommentThread(sectionKey);
+  } catch (e) {
+    showToast(e.message || '留言刪除失敗');
   }
 }
 
@@ -352,6 +502,22 @@ document.addEventListener('DOMContentLoaded', () => {
       const idx = Number(t_.dataset.kpiIdx);
       state.case.detail.A.kpis[idx][t_.dataset.kpiField].current = t_.value;
       state.dirty.add(`A.kpis.${idx}.${t_.dataset.kpiField}`);
+      return;
+    }
+    if (t_.classList.contains('comment-new-textarea')) {
+      const section = t_.dataset.section;
+      commentUi.drafts[section] = t_.value;
+      const counter = document.querySelector(`[data-count-for="new-${section}"]`);
+      if (counter) counter.textContent = `${t_.value.length}/300`;
+      const row = t_.closest('.comment-input-row');
+      const btn = row ? row.querySelector('.comment-submit-btn') : null;
+      if (btn) btn.classList.toggle('hidden', !t_.value.trim());
+      return;
+    }
+    if (t_.classList.contains('comment-edit-textarea')) {
+      const counter = document.querySelector(`[data-count-for="${t_.dataset.commentId}"]`);
+      if (counter) counter.textContent = `${t_.value.length}/300`;
+      return;
     }
   });
 
@@ -372,6 +538,37 @@ document.addEventListener('DOMContentLoaded', () => {
     if (e.target.id === 'back-btn') {
       if (window.history.length > 1) window.history.back();
       else alert('這是 Demo 頁面，尚未串接實際返回目標。');
+      return;
+    }
+
+    const commentBtn = e.target.closest('[data-comment-action]');
+    if (commentBtn) {
+      const action = commentBtn.dataset.commentAction;
+      const id = commentBtn.dataset.commentId ? Number(commentBtn.dataset.commentId) : null;
+      const section = commentBtn.dataset.section;
+      if (action === 'toggle-menu') {
+        commentUi.openMenuId = commentUi.openMenuId === id ? null : id;
+        refreshCommentThread(sectionKeyForComment(id));
+      } else if (action === 'start-edit') {
+        commentUi.editingId = id;
+        commentUi.openMenuId = null;
+        refreshCommentThread(sectionKeyForComment(id));
+      } else if (action === 'cancel-edit') {
+        commentUi.editingId = null;
+        refreshCommentThread(sectionKeyForComment(id));
+      } else if (action === 'save-edit') {
+        saveCommentEdit(id);
+      } else if (action === 'delete') {
+        deleteComment(id);
+      } else if (action === 'submit') {
+        submitNewComment(section);
+      }
+      return;
+    }
+    if (commentUi.openMenuId !== null && !e.target.closest('.comment-kebab-wrap')) {
+      const closingId = commentUi.openMenuId;
+      commentUi.openMenuId = null;
+      refreshCommentThread(sectionKeyForComment(closingId));
     }
   });
 });

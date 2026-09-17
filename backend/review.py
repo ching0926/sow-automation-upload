@@ -4,6 +4,7 @@ from typing import List, Literal, Optional, Union
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 from sqlalchemy import text
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from db import get_db
@@ -55,6 +56,16 @@ class ReturnIn(BaseModel):
 class CommentIn(BaseModel):
     authorRole: Literal["DRI", "MANAGER"]
     body: str
+    sectionKey: Optional[str] = None
+
+
+class CommentUpdateIn(BaseModel):
+    authorRole: Literal["DRI", "MANAGER"]
+    body: str
+
+
+class CommentDeleteIn(BaseModel):
+    authorRole: Literal["DRI", "MANAGER"]
 
 
 # ---------- helpers ----------
@@ -189,7 +200,7 @@ def build_review_case(db: Session, sow_id: int):
     comment_rows = db.execute(
         text(
             """
-            SELECT author_role, author_name, body, created_at
+            SELECT id, author_role, author_name, body, section_key, created_at, updated_at
             FROM sow_review_comment WHERE sow_id = :id ORDER BY created_at ASC
             """
         ),
@@ -271,10 +282,13 @@ def build_review_case(db: Session, sow_id: int):
         },
         "comments": [
             {
+                "id": r["id"],
+                "sectionKey": r["section_key"],
                 "authorRole": r["author_role"],
                 "authorName": r["author_name"] or "",
                 "body": r["body"],
                 "createdAt": _fmt(r["created_at"]),
+                "updatedAt": _fmt(r["updated_at"]),
             }
             for r in comment_rows
         ],
@@ -356,16 +370,91 @@ def add_comment(job_code: str, body: CommentIn, db: Session = Depends(get_db)):
     doc = _fetch_doc_status(db, sow_id)
     if not doc:
         raise HTTPException(status_code=404, detail="Case not found")
+
+    text_body = body.body.strip()
+    if not text_body:
+        raise HTTPException(status_code=422, detail="留言內容不可為空")
+    if len(text_body) > 300:
+        raise HTTPException(status_code=422, detail="留言內容超過 300 字上限")
+    if body.sectionKey and len(body.sectionKey) > 100:
+        raise HTTPException(status_code=422, detail="sectionKey 過長")
+
+    if body.sectionKey:
+        existing = db.execute(
+            text(
+                """
+                SELECT id FROM sow_review_comment
+                WHERE sow_id = :sow_id AND author_role = :role AND section_key = :section_key
+                """
+            ),
+            {"sow_id": sow_id, "role": body.authorRole, "section_key": body.sectionKey},
+        ).first()
+        if existing:
+            raise HTTPException(status_code=409, detail="您已在此欄位留言，請編輯現有留言")
+
     author_name = _resolve_reviewer_email(db, sow_id, body.authorRole)
+    try:
+        db.execute(
+            text(
+                """
+                INSERT INTO sow_review_comment (sow_id, author_role, author_name, body, section_key)
+                VALUES (:sow_id, :role, :name, :body, :section_key)
+                """
+            ),
+            {
+                "sow_id": sow_id,
+                "role": body.authorRole,
+                "name": author_name,
+                "body": text_body,
+                "section_key": body.sectionKey,
+            },
+        )
+        db.commit()
+    except IntegrityError:
+        db.rollback()
+        raise HTTPException(status_code=409, detail="您已在此欄位留言，請編輯現有留言")
+    return build_review_case(db, sow_id)
+
+
+@router.put("/cases/{job_code}/comments/{comment_id}")
+def update_comment(job_code: str, comment_id: int, body: CommentUpdateIn, db: Session = Depends(get_db)):
+    sow_id = _resolve_sow_id(db, job_code)
+    text_body = body.body.strip()
+    if not text_body:
+        raise HTTPException(status_code=422, detail="留言內容不可為空")
+    if len(text_body) > 300:
+        raise HTTPException(status_code=422, detail="留言內容超過 300 字上限")
+
+    row = db.execute(
+        text("SELECT id, author_role FROM sow_review_comment WHERE id = :id AND sow_id = :sow_id"),
+        {"id": comment_id, "sow_id": sow_id},
+    ).mappings().first()
+    if not row:
+        raise HTTPException(status_code=404, detail="Comment not found")
+    if row["author_role"] != body.authorRole:
+        raise HTTPException(status_code=403, detail="無法編輯其他角色的留言")
+
     db.execute(
-        text(
-            """
-            INSERT INTO sow_review_comment (sow_id, author_role, author_name, body)
-            VALUES (:sow_id, :role, :name, :body)
-            """
-        ),
-        {"sow_id": sow_id, "role": body.authorRole, "name": author_name, "body": body.body},
+        text("UPDATE sow_review_comment SET body = :body, updated_at = now() WHERE id = :id"),
+        {"id": comment_id, "body": text_body},
     )
+    db.commit()
+    return build_review_case(db, sow_id)
+
+
+@router.delete("/cases/{job_code}/comments/{comment_id}")
+def delete_comment(job_code: str, comment_id: int, body: CommentDeleteIn, db: Session = Depends(get_db)):
+    sow_id = _resolve_sow_id(db, job_code)
+    row = db.execute(
+        text("SELECT id, author_role FROM sow_review_comment WHERE id = :id AND sow_id = :sow_id"),
+        {"id": comment_id, "sow_id": sow_id},
+    ).mappings().first()
+    if not row:
+        raise HTTPException(status_code=404, detail="Comment not found")
+    if row["author_role"] != body.authorRole:
+        raise HTTPException(status_code=403, detail="無法刪除其他角色的留言")
+
+    db.execute(text("DELETE FROM sow_review_comment WHERE id = :id"), {"id": comment_id})
     db.commit()
     return build_review_case(db, sow_id)
 

@@ -42,3 +42,15 @@ function apiReturnToDri(jobCode, body) {
 function apiApprove(jobCode, body) {
   return apiRequest('POST', `/api/review/cases/${jobCode}/approve`, body);
 }
+
+function apiAddComment(jobCode, body) {
+  return apiRequest('POST', `/api/review/cases/${jobCode}/comments`, body);
+}
+
+function apiUpdateComment(jobCode, commentId, body) {
+  return apiRequest('PUT', `/api/review/cases/${jobCode}/comments/${commentId}`, body);
+}
+
+function apiDeleteComment(jobCode, commentId, body) {
+  return apiRequest('DELETE', `/api/review/cases/${jobCode}/comments/${commentId}`, body);
+}

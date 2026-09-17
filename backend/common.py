@@ -28,6 +28,13 @@ def derive_title(file_name: str) -> str:
     return stem.replace("_", " ").replace("-", " ").strip()
 
 
+def derive_contact_item_name(file_name: str) -> str:
+    """檔名前 12 碼是 jobcode，聯繫卡片只顯示 12 碼之後、去副檔名的檔名。"""
+    remainder = file_name[12:].lstrip("_- ")
+    stem = Path(remainder).stem
+    return stem.replace("_", " ").replace("-", " ").strip()
+
+
 def derive_description(customer_context: dict) -> str:
     challenge = (customer_context or {}).get("challenge", "")
     return challenge[:60] + ("…" if len(challenge) > 60 else "")
