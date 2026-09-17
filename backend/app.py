@@ -59,7 +59,6 @@ def build_case(db: Session, doc: dict) -> dict:
 
     kpis = [
         {
-            "icon": kpi.get("icon", ""),
             "value": kpi.get("value", ""),
             "label": bi(kpi.get("label", "")),
         }

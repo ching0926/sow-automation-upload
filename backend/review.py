@@ -16,7 +16,6 @@ router = APIRouter(prefix="/api/review")
 # ---------- request bodies ----------
 
 class KpiIn(BaseModel):
-    icon: str = ""
     value: str = ""
     label: str = ""
 
@@ -91,7 +90,7 @@ def _to_snake_content(body: DraftSaveIn):
         "industry_background": cc.industryBackground,
         "challenge": cc.challenge,
         "solution": cc.solution,
-        "kpis": [{"icon": k.icon, "value": k.value, "label": k.label} for k in cc.kpis],
+        "kpis": [{"value": k.value, "label": k.label} for k in cc.kpis],
     }
     project_planning = {
         "owner": pp.owner,
@@ -223,7 +222,6 @@ def build_review_case(db: Session, sow_id: int):
         kpi_o = kpis_original[i] if i < len(kpis_original) else {}
         kpis.append(
             {
-                "icon": kpi_c.get("icon", ""),
                 "value": _field(kpi_o.get("value", ""), kpi_c.get("value", ""), saved_at),
                 "label": _field(kpi_o.get("label", ""), kpi_c.get("label", ""), saved_at),
                 "savedAt": saved_at,

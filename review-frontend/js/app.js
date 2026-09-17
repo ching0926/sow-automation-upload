@@ -82,7 +82,7 @@ function buildDraftPayload() {
       industryBackground: d.A.industryBackground.current,
       challenge: d.A.challenge.current,
       solution: d.A.solution.current,
-      kpis: d.A.kpis.map((k) => ({ icon: k.icon, value: k.value.current, label: k.label.current })),
+      kpis: d.A.kpis.map((k) => ({ value: k.value.current, label: k.label.current })),
     },
     projectPlanning: {
       owner: d.B.owner.current,
@@ -189,12 +189,15 @@ function renderKpiSectionDri() {
   return `<div class="field-row">
     <div class="field-block">
       <label class="field-label">關鍵成效指標 (KPIs)</label>
+      <div class="kpi-subtitle">以下為本專案預期帶來的主要成效</div>
       <div class="kpi-row">
-        ${kpis.map((k, i) => `
-          <div class="kpi-card">
-            <div class="kpi-icon">${k.icon}</div>
-            <input class="kpi-value-input" data-kpi-idx="${i}" data-kpi-field="value" value="${escapeAttr(k.value.current)}" ${disabledAttr} />
-            <input class="kpi-label-input" data-kpi-idx="${i}" data-kpi-field="label" value="${escapeAttr(k.label.current)}" ${disabledAttr} />
+        ${kpis.map((k, i, arr) => `
+          <div class="kpi-card${(arr.length % 2 === 1 && i === arr.length - 1) ? ' kpi-card-span' : ''}">
+            <div class="kpi-card-top">
+              <input class="kpi-title-input" data-kpi-idx="${i}" data-kpi-field="label" value="${escapeAttr(k.label.current)}" ${disabledAttr} />
+              <div class="kpi-index">${String(i + 1).padStart(2, '0')}</div>
+            </div>
+            <textarea class="kpi-desc-textarea" data-kpi-idx="${i}" data-kpi-field="value" ${disabledAttr}>${escapeHtml(k.value.current)}</textarea>
           </div>`).join('')}
       </div>
     </div>
@@ -247,12 +250,15 @@ function renderKpiSectionManager() {
   return `<div class="field-row">
     <div class="field-block readonly">
       <label class="field-label">關鍵成效指標 (KPIs)</label>
+      <div class="kpi-subtitle">以下為本專案預期帶來的主要成效</div>
       <div class="kpi-row">
-        ${kpis.map((k) => `
-          <div class="kpi-card">
-            <div class="kpi-icon">${k.icon}</div>
-            <div class="kpi-value">${escapeHtml(k.value.current)}</div>
-            <div class="kpi-label">${escapeHtml(k.label.current)}</div>
+        ${kpis.map((k, i, arr) => `
+          <div class="kpi-card${(arr.length % 2 === 1 && i === arr.length - 1) ? ' kpi-card-span' : ''}">
+            <div class="kpi-card-top">
+              <div class="kpi-title">${escapeHtml(k.label.current)}</div>
+              <div class="kpi-index">${String(i + 1).padStart(2, '0')}</div>
+            </div>
+            <div class="kpi-desc">${escapeHtml(k.value.current)}</div>
           </div>`).join('')}
       </div>
     </div>

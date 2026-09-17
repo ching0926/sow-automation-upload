@@ -227,12 +227,15 @@ function sectionsTabA(c) {
     { id: 'sec-aws-solution', titleKey: 'a_aws_solution', body: `<div class="section-card"><p>${a.solution[state.lang]}</p></div>` },
     {
       id: 'sec-benefits', titleKey: 'a_benefits', body: `
-      <div class="kpi-row">
-        ${a.kpis.map(k => `
-          <div class="kpi-card">
-            <div class="kpi-icon">${k.icon}</div>
-            <div class="kpi-value">${k.value}</div>
-            <div class="kpi-label">${k.label[state.lang]}</div>
+      <div class="benefit-subtitle">${t(state.lang, 'a_benefits_subtitle')}</div>
+      <div class="benefit-row">
+        ${a.kpis.map((k, i, arr) => `
+          <div class="benefit-card${(arr.length % 2 === 1 && i === arr.length - 1) ? ' benefit-card-span' : ''}">
+            <div class="benefit-card-top">
+              <div class="benefit-title">${k.label[state.lang]}</div>
+              <div class="benefit-index">${String(i + 1).padStart(2, '0')}</div>
+            </div>
+            <div class="benefit-desc">${k.value}</div>
           </div>`).join('')}
       </div>`,
     },
