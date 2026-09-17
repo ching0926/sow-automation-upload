@@ -142,9 +142,10 @@ function renderFieldDri(tab, def) {
 
   if (def.type === 'list') {
     const val = (f.current || []).join('\n');
+    const autosizeCls = tab === 'C' ? ' autosize' : '';
     return `<div class="field-block ${dirty ? 'dirty' : ''}">
       <label class="field-label">${def.label} ${hint}</label>
-      <textarea class="field-textarea" data-path="${path}" data-type="list" ${disabledAttr}>${escapeHtml(val)}</textarea>
+      <textarea class="field-textarea${autosizeCls}" data-path="${path}" data-type="list" ${disabledAttr}>${escapeHtml(val)}</textarea>
     </div>`;
   }
   if (def.type === 'textarea') {
@@ -236,6 +237,11 @@ function renderKpiSectionManager() {
   </div>`;
 }
 
+function autoGrowTextarea(el) {
+  el.style.height = 'auto';
+  el.style.height = el.scrollHeight + 'px';
+}
+
 function renderContent() {
   const tab = state.tab;
   const el = document.getElementById('review-content');
@@ -248,27 +254,7 @@ function renderContent() {
     if (tab === 'A') html += renderKpiSectionManager();
   }
   el.innerHTML = html;
-}
-
-function renderComments() {
-  const panel = document.getElementById('comment-panel');
-  if (!panel) return;
-  const comments = state.case.comments || [];
-  const list = comments.length
-    ? comments.map((c) => `
-      <div class="comment-item">
-        <div class="changelog-time">${c.authorRole === 'DRI' ? 'DRI' : '主管'}・${escapeHtml(c.authorName || '—')}・${escapeHtml(c.createdAt || '')}</div>
-        <div class="diff-after">${escapeHtml(c.body)}</div>
-      </div>`).join('')
-    : '<div class="diff-none">尚無留言</div>';
-  const form = `
-    <div class="field-block" style="margin-top:14px;">
-      <textarea class="field-textarea small" id="comment-input" placeholder="輸入留言…"></textarea>
-      <div class="action-bar" style="margin-top:8px;">
-        <button class="btn btn-primary" data-action="comment">送出留言</button>
-      </div>
-    </div>`;
-  panel.innerHTML = '<div class="comment-panel-title">留言記錄</div>' + list + form;
+  el.querySelectorAll('.field-textarea.autosize').forEach(autoGrowTextarea);
 }
 
 function render() {
@@ -276,7 +262,6 @@ function render() {
   renderMetaBar();
   renderTabs();
   renderContent();
-  renderComments();
 }
 
 // ---------- actions ----------
@@ -328,22 +313,6 @@ async function approveAndPublish() {
   }
 }
 
-async function submitComment() {
-  const input = document.getElementById('comment-input');
-  const text = input.value.trim();
-  if (!text) {
-    showToast('請先輸入留言內容');
-    return;
-  }
-  try {
-    state.case = await apiAddComment(JOB_CODE, { authorRole: MODE === 'dri' ? 'DRI' : 'MANAGER', body: text });
-    render();
-    showToast('已送出留言');
-  } catch (e) {
-    showToast(e.message || '留言送出失敗');
-  }
-}
-
 // ---------- init ----------
 async function init() {
   if (!JOB_CODE) {
@@ -367,6 +336,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
   document.addEventListener('input', (e) => {
     const t_ = e.target;
+    if (t_.classList.contains('autosize')) autoGrowTextarea(t_);
     if (t_.dataset.path) {
       const [tab, key] = t_.dataset.path.split('.');
       const f = state.case.detail[tab][key];
@@ -396,7 +366,6 @@ document.addEventListener('DOMContentLoaded', () => {
       if (action === 'submit') submitReview();
       if (action === 'return') returnToDri();
       if (action === 'approve') approveAndPublish();
-      if (action === 'comment') submitComment();
       return;
     }
 

@@ -89,6 +89,7 @@ textarea, input { font-family: inherit; }
 }
 .field-textarea { min-height: 88px; resize: vertical; line-height: 1.6; }
 .field-textarea.small { min-height: 64px; }
+.field-textarea.autosize { resize: none; overflow: hidden; }
 .field-input:focus, .field-textarea:focus { outline: none; border-color: var(--blue); box-shadow: 0 0 0 2px var(--blue-light); }
 .field-unit { font-size: 12px; color: var(--text-muted); margin-left: 8px; }
 .field-input-row { display: flex; align-items: center; }
@@ -131,15 +132,6 @@ textarea, input { font-family: inherit; }
 .tag-purple { color: #7c3aed; border-color: #7c3aed; }
 .tag-blue { color: #2563eb; border-color: #2563eb; }
 .tag-gray { color: #64748b; border-color: #cbd5e1; }
-
-/* ---------- comments ---------- */
-.comment-panel {
-  background: var(--card-bg); border: 1px solid var(--border); border-radius: var(--radius);
-  box-shadow: var(--shadow); padding: 18px 20px; margin-top: 18px;
-}
-.comment-panel-title { font-weight: 700; font-size: 13.5px; margin-bottom: 10px; }
-.comment-item { padding: 10px 0; border-top: 1px dashed var(--border); }
-.comment-item:first-of-type { border-top: none; padding-top: 0; }
 
 /* ---------- toast ---------- */
 .toast {

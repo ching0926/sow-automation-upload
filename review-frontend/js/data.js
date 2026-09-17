@@ -35,10 +35,6 @@ function apiSubmitReview(jobCode, body) {
   return apiRequest('POST', `/api/review/cases/${jobCode}/submit`, body);
 }
 
-function apiAddComment(jobCode, body) {
-  return apiRequest('POST', `/api/review/cases/${jobCode}/comments`, body);
-}
-
 function apiReturnToDri(jobCode, body) {
   return apiRequest('POST', `/api/review/cases/${jobCode}/return`, body);
 }
