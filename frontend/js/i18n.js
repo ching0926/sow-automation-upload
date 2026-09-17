@@ -68,11 +68,6 @@ const I18N = {
     interest_result_title: '已送出您的意願',
     interest_result_desc: '相關團隊將主動與您聯繫，介紹案例相關內容與後續流程。',
     interest_result_close: '我知道了',
-    role_scope_hint: {
-      customer: '目前角色為「客戶」，僅可檢視客戶脈絡與價值相關內容。',
-      pm: '目前角色為「PM」，可檢視客戶脈絡與價值 ➕ 專案規劃與交付內容。',
-      sa: '目前角色為「SA」，可檢視客戶脈絡與價值 ➕ 專案規劃與交付 ➕ 技術設計與架構之完整內容。',
-    },
   },
   en: {
     appName: 'eCloudvalley',
@@ -142,11 +137,6 @@ const I18N = {
     interest_result_title: 'Your request has been submitted',
     interest_result_desc: 'The relevant team will contact you to walk through this case and the next steps.',
     interest_result_close: 'Got it',
-    role_scope_hint: {
-      customer: 'Current role: Customer. You can view customer context & value content only.',
-      pm: 'Current role: PM. You can view customer context & value, plus project planning & delivery.',
-      sa: 'Current role: SA. You can view customer context & value, project planning & delivery, plus technical design & architecture.',
-    },
   },
 };
 

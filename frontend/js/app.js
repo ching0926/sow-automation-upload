@@ -416,7 +416,6 @@ function renderPanel() {
           <span>${t(state.lang, 'preview_uploaded')}：${c.date}</span>
           <span>${t(state.lang, 'preview_creator')}：${c.creator}</span>
         </div>
-        <div class="role-hint">ℹ️ ${I18N[state.lang].role_scope_hint[state.role]}</div>
         ${tabsHtml}
         <div class="panel-content" id="panel-content">
           ${quicklinksHtml}
