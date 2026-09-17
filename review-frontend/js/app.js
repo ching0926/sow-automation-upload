@@ -105,7 +105,8 @@ function renderTopbar() {
     : `<button class="btn btn-ghost" data-action="return" ${state.case.status === 'MANAGER_REVIEW' ? '' : 'disabled'}>退回 DRI</button>
        <button class="btn btn-primary" data-action="approve" ${state.case.status === 'MANAGER_REVIEW' ? '' : 'disabled'}>核准並發布</button>`;
   document.getElementById('action-bar-top').innerHTML = actionsHtml;
-  document.getElementById('action-bar-bottom').innerHTML = actionsHtml;
+  const bottomBar = document.getElementById('action-bar-bottom');
+  if (bottomBar) bottomBar.innerHTML = actionsHtml;
 }
 
 function renderMetaBar() {
