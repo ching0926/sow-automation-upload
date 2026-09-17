@@ -31,6 +31,7 @@ const state = {
   search: '',
   previewId: null,
   previewTab: 'A',
+  interestModal: null, // null | 'confirm' | 'result'
   favorites: new Set(JSON.parse(localStorage.getItem('skb_favorites') || '[]')),
   recent: JSON.parse(localStorage.getItem('skb_recent') || '[]'),
 };
@@ -386,6 +387,13 @@ function renderPanel() {
     : `<button class="icon-btn" id="preview-fullscreen-btn">⛶</button>
        <button class="icon-btn" id="preview-close-x">✕</button>`;
 
+  const footerHtml = state.role === 'customer' ? `
+    <div class="preview-footer">
+      <div class="preview-footer-inner">
+        <button class="btn btn-primary interest-btn" id="interest-open-btn">${t(state.lang, 'interest_open_btn')}</button>
+      </div>
+    </div>` : '';
+
   drawer.classList.remove('hidden');
   drawer.innerHTML = `
     <div class="preview-header">
@@ -411,7 +419,57 @@ function renderPanel() {
           ${contentHtml}
         </div>
       </div>
+    </div>
+    ${footerHtml}`;
+}
+
+// ---------- interest modal（Customer 角色專屬的「我有興趣」流程） ----------
+// 卡片內容是設計稿裡的固定示意文字，刻意不對應目前開啟的真實案例資料。
+function interestItemCardHtml() {
+  return `
+    <div class="modal-case-card">
+      <div class="modal-item-label">${t(state.lang, 'interest_item_label')}</div>
+      <div class="modal-case-title">${t(state.lang, 'interest_item_title')}</div>
+      <div class="modal-case-subtitle">${t(state.lang, 'interest_item_subtitle')}</div>
     </div>`;
+}
+
+function interestConfirmModalHtml() {
+  return `
+    <div class="modal-card">
+      <div class="modal-icon-circle confirm">♡</div>
+      <div class="modal-title">${t(state.lang, 'interest_confirm_title')}</div>
+      <div class="modal-desc">${t(state.lang, 'interest_confirm_desc')}</div>
+      ${interestItemCardHtml()}
+      <div class="modal-actions">
+        <button class="btn btn-ghost" id="interest-cancel-btn">${t(state.lang, 'interest_cancel')}</button>
+        <button class="btn btn-primary" id="interest-confirm-submit-btn">${t(state.lang, 'interest_confirm_submit')}</button>
+      </div>
+    </div>`;
+}
+
+function interestResultModalHtml() {
+  return `
+    <div class="modal-card">
+      <div class="modal-icon-circle result">✓</div>
+      <div class="modal-title">${t(state.lang, 'interest_result_title')}</div>
+      <div class="modal-desc">${t(state.lang, 'interest_result_desc')}</div>
+      ${interestItemCardHtml()}
+      <div class="modal-actions single">
+        <button class="btn btn-primary" id="interest-result-close-btn">${t(state.lang, 'interest_result_close')}</button>
+      </div>
+    </div>`;
+}
+
+function renderInterestModal() {
+  const el = document.getElementById('interest-modal-overlay');
+  if (!state.interestModal || state.role !== 'customer' || !state.previewId) {
+    el.classList.add('hidden');
+    el.innerHTML = '';
+    return;
+  }
+  el.classList.remove('hidden');
+  el.innerHTML = state.interestModal === 'confirm' ? interestConfirmModalHtml() : interestResultModalHtml();
 }
 
 // ---------- master render ----------
@@ -423,15 +481,17 @@ function render() {
   if (state.view === 'favorites') { showView('view-favorites'); renderFavoritesView(); }
   if (state.view === 'recent') { showView('view-recent'); renderRecentView(); }
   renderPanel();
+  renderInterestModal();
 }
 
 // ---------- events ----------
 function openPanel(id) {
   state.previewId = Number(id);
+  state.interestModal = null;
   addToRecent(Number(id));
   render();
 }
-function closePanel() { state.previewId = null; render(); }
+function closePanel() { state.previewId = null; state.interestModal = null; render(); }
 function toggleFavorite(id) {
   id = Number(id);
   if (state.favorites.has(id)) state.favorites.delete(id); else state.favorites.add(id);
@@ -511,6 +571,12 @@ document.addEventListener('DOMContentLoaded', async () => {
       if (target) target.scrollIntoView({ behavior: 'smooth', block: 'start' });
       return;
     }
+
+    // interest modal
+    if (t_.id === 'interest-open-btn') { state.interestModal = 'confirm'; renderInterestModal(); return; }
+    if (t_.id === 'interest-cancel-btn') { state.interestModal = null; renderInterestModal(); return; }
+    if (t_.id === 'interest-confirm-submit-btn') { state.interestModal = 'result'; renderInterestModal(); return; }
+    if (t_.id === 'interest-result-close-btn') { state.interestModal = null; renderInterestModal(); return; }
 
     // card click -> open panel (ignore clicks on star, already handled above)
     const card = t_.closest('.case-card');
