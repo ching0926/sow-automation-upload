@@ -2,3 +2,12 @@
 __pycache__/
 *.pyc
 package
+
+# terraform（infra/terraform）
+infra/terraform/.terraform/
+infra/terraform/*.tfstate
+infra/terraform/*.tfstate.*
+infra/terraform/*.pem
+infra/terraform/crash.log
+infra/terraform/override.tf
+infra/terraform/*.tfvars
