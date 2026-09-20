@@ -194,15 +194,6 @@ button { font-family: inherit; cursor: pointer; }
 .tab-btn.active { color: var(--blue-dark); border-bottom-color: var(--blue); }
 .tab-btn:hover { color: var(--blue-dark); }
 
-.quicklinks {
-  display: flex; gap: 6px; flex-wrap: wrap; padding: 10px 0; margin-bottom: 14px;
-  border-bottom: 1px dashed var(--border); position: sticky; top: 0; background: white; z-index: 5;
-}
-.quicklink-btn {
-  border: 1px solid var(--border); background: var(--bg); color: var(--blue-dark); border-radius: 20px;
-  padding: 5px 12px; font-size: 12px; font-weight: 600;
-}
-.quicklink-btn:hover { background: var(--blue-light); border-color: var(--blue); }
 .panel-section { margin-bottom: 4px; }
 
 .panel-content .section-title { font-size: 13.5px; font-weight: 700; margin-bottom: 10px; }
@@ -212,14 +203,27 @@ button { font-family: inherit; cursor: pointer; }
 .section-card { background: var(--bg); border: 1px solid var(--border); border-radius: 10px; padding: 14px; }
 .section-card p { font-size: 13px; line-height: 1.6; margin: 0; color: var(--text); }
 
-.kpi-row { display: grid; grid-template-columns: repeat(2, 1fr); gap: 10px; }
-.preview-drawer.fullscreen .kpi-row { grid-template-columns: repeat(4, 1fr); }
-.kpi-row.kpi-row-single { grid-template-columns: 1fr; max-width: 240px; }
-.preview-drawer.fullscreen .kpi-row.kpi-row-single { grid-template-columns: 1fr; max-width: 260px; }
-.kpi-card { background: var(--blue-light); border-radius: 10px; padding: 14px; text-align: center; }
-.kpi-icon { font-size: 18px; }
-.kpi-value { font-size: 18px; font-weight: 800; color: var(--blue-dark); margin: 4px 0; }
-.kpi-label { font-size: 11px; color: var(--text-muted); }
+/* ---------- 專案規劃與交付：人天估算／專案成本（跟區塊等寬的大方框） ---------- */
+.metric-box { display: flex; align-items: center; gap: 20px; padding: 20px 24px; border-radius: 14px; }
+.metric-icon-circle {
+  flex: none; width: 56px; height: 56px; border-radius: 50%;
+  display: flex; align-items: center; justify-content: center; font-size: 26px;
+}
+.metric-divider { flex: none; width: 1px; align-self: stretch; background: rgba(0, 0, 0, 0.12); }
+.metric-content { flex: 1; min-width: 0; }
+.metric-caption { font-size: 12px; color: var(--text-muted); margin-bottom: 4px; }
+.metric-value-row { display: flex; align-items: baseline; gap: 8px; flex-wrap: wrap; }
+.metric-value { font-size: 28px; font-weight: 800; line-height: 1.2; }
+.metric-unit { font-size: 13px; font-weight: 600; color: var(--text-muted); }
+.metric-subcaption { font-size: 12px; color: var(--text-muted); margin-top: 4px; }
+
+.metric-box-manday { background: #eef7f0; }
+.metric-box-manday .metric-icon-circle { background: #d7f0dc; }
+.metric-box-manday .metric-value { color: #2f9e44; }
+
+.metric-box-cost { background: #fdf3e6; }
+.metric-box-cost .metric-icon-circle { background: #fbe4c0; }
+.metric-box-cost .metric-value { color: #d9822b; }
 
 /* ---------- 客戶脈絡與價值：關鍵成效指標（label/value 兩欄位，無 icon） ---------- */
 .benefit-subtitle { font-size: 12px; color: var(--text-muted); margin: -4px 0 12px; }

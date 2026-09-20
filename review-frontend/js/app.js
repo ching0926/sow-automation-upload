@@ -13,7 +13,7 @@ const FIELD_DEFS = {
     { key: 'solution', label: '解決方案', type: 'textarea' },
   ],
   B: [
-    { key: 'owner', label: 'DRI 負責人', type: 'text' },
+    { key: 'owner', label: 'DRI 部門', type: 'text' },
     { key: 'period', label: '專案期間', type: 'text' },
     { key: 'teamSize', label: '團隊總人數', type: 'text', unit: '人' },
     { key: 'manDays', label: '人天估算', type: 'text', unit: '人天' },
@@ -22,8 +22,6 @@ const FIELD_DEFS = {
   ],
   C: [
     { key: 'coreFunctions', label: '核心功能設計', type: 'list' },
-    { key: 'architecture', label: '底層技術架構節點', type: 'list' },
-    { key: 'techStack', label: '技術堆疊', type: 'list' },
   ],
 };
 
@@ -62,6 +60,9 @@ function escapeHtml(s) {
 function escapeAttr(s) {
   return escapeHtml(s).replace(/"/g, '&quot;');
 }
+function isEmptyValue(v) {
+  return v === null || v === undefined || v === '';
+}
 
 function showToast(msg) {
   const el = document.getElementById('toast');
@@ -94,8 +95,12 @@ function buildDraftPayload() {
     },
     technicalDesign: {
       coreFunctions: d.C.coreFunctions.current,
-      architecture: d.C.architecture.current,
-      techStack: d.C.techStack.current,
+      systemModules: d.C.systemModules.current.map((m) => ({ moduleName: m.moduleName, responsibility: m.responsibility })),
+      underlyingArchitecture: {
+        summary: d.C.underlyingArchitecture.current.summary,
+        dataFlow: d.C.underlyingArchitecture.current.dataFlow,
+        deploymentEnvironment: d.C.underlyingArchitecture.current.deploymentEnvironment,
+      },
     },
   };
 }
@@ -145,7 +150,9 @@ function renderFieldDri(tab, def) {
   const disabledAttr = (fieldEditable() && !ndaLocked) ? '' : 'disabled';
   const hint = def.type === 'list'
     ? '<span class="field-hint">（每行一項）</span>'
-    : ndaLocked ? '<span class="field-hint">（依 NDA 工作站資料鎖定，不可編輯）</span>' : '';
+    : ndaLocked ? '<span class="field-hint">（依 NDA 工作站資料鎖定，不可編輯）</span>'
+    : (def.key === 'teamSize' && isEmptyValue(f.current)) ? '<span class="field-hint">（無團隊總人數資料，若有請手動新增）</span>'
+    : '';
 
   let editorHtml;
   if (def.type === 'list') {
@@ -188,7 +195,7 @@ function renderKpiSectionDri() {
   const kpis = state.case.detail.A.kpis;
   return `<div class="field-row">
     <div class="field-block">
-      <label class="field-label">關鍵成效指標 (KPIs)</label>
+      <label class="field-label">客戶效益</label>
       <div class="kpi-subtitle">以下為本專案預期帶來的主要成效</div>
       <div class="kpi-row">
         ${kpis.map((k, i, arr) => `
@@ -221,14 +228,17 @@ function renderKpiSectionDri() {
 function renderFieldManager(tab, def) {
   const f = state.case.detail[tab][def.key];
   const isList = def.type === 'list';
-  const currentDisplay = isList ? (f.current || []).join('、') : f.current;
+  const isBulletList = def.key === 'coreFunctions';
+  const currentDisplay = isList && !isBulletList ? (f.current || []).join('、') : f.current;
   const hasDiff = JSON.stringify(f.current) !== JSON.stringify(f.original);
   const ndaLocked = f.source === 'nda';
 
   return `<div class="field-row">
     <div class="field-block readonly">
       <label class="field-label">${def.label}</label>
-      <div class="section-card"><p>${escapeHtml(currentDisplay)}</p></div>
+      <div class="section-card">${isBulletList
+        ? `<ul class="bullet-list">${(f.current || []).map(x => `<li>• ${escapeHtml(x)}</li>`).join('')}</ul>`
+        : `<p>${escapeHtml(currentDisplay)}</p>`}</div>
     </div>
     <div class="side-panel">
       <div class="changelog-card">
@@ -249,7 +259,7 @@ function renderKpiSectionManager() {
   const kpis = state.case.detail.A.kpis;
   return `<div class="field-row">
     <div class="field-block readonly">
-      <label class="field-label">關鍵成效指標 (KPIs)</label>
+      <label class="field-label">客戶效益</label>
       <div class="kpi-subtitle">以下為本專案預期帶來的主要成效</div>
       <div class="kpi-row">
         ${kpis.map((k, i, arr) => `
@@ -274,6 +284,113 @@ function renderKpiSectionManager() {
         }).join('')}
       </div>
       ${renderCommentThread('A.kpis')}
+    </div>
+  </div>`;
+}
+
+// ---------- render: 模組拆分 / 底層技術架構（DRI 編輯 / 主管唯讀） ----------
+function renderModulesSectionDri() {
+  const f = state.case.detail.C.systemModules;
+  const modules = f.current || [];
+  const disabledAttr = fieldEditable() ? '' : 'disabled';
+  const hasDiff = JSON.stringify(f.current) !== JSON.stringify(f.original);
+
+  return `<div class="field-row">
+    <div class="field-block">
+      <label class="field-label">模組拆分</label>
+      ${modules.map((m, i) => `
+        <div class="module-edit-row">
+          <input class="field-input" data-module-idx="${i}" data-module-field="moduleName" value="${escapeAttr(m.moduleName)}" ${disabledAttr} />
+          <textarea class="field-textarea small" data-module-idx="${i}" data-module-field="responsibility" ${disabledAttr}>${escapeHtml(m.responsibility)}</textarea>
+        </div>`).join('')}
+    </div>
+    <div class="side-panel">
+      <div class="changelog-card">
+        <div class="changelog-title">📄 變更記錄</div>
+        <div class="changelog-time">DRI 修改於 ${f.savedAt || '—'}</div>
+        ${!hasDiff ? '<div class="diff-none">無修改</div>' : ''}
+      </div>
+      ${renderCommentThread('C.systemModules')}
+    </div>
+  </div>`;
+}
+
+function renderModulesSectionManager() {
+  const f = state.case.detail.C.systemModules;
+  const modules = f.current || [];
+  const hasDiff = JSON.stringify(f.current) !== JSON.stringify(f.original);
+
+  return `<div class="field-row">
+    <div class="field-block readonly">
+      <label class="field-label">模組拆分</label>
+      <div class="section-card">
+        <ul class="bullet-list">${modules.map((m) => `<li>• <strong>${escapeHtml(m.moduleName)}</strong>${m.responsibility ? `：${escapeHtml(m.responsibility)}` : ''}</li>`).join('')}</ul>
+      </div>
+    </div>
+    <div class="side-panel">
+      <div class="changelog-card">
+        <div class="changelog-title">📄 變更記錄</div>
+        <div class="changelog-time">DRI 修改於 ${f.savedAt || '—'}</div>
+        ${!hasDiff ? '<div class="diff-none">無修改</div>' : ''}
+      </div>
+      ${renderCommentThread('C.systemModules')}
+    </div>
+  </div>`;
+}
+
+function renderArchitectureSectionDri() {
+  const f = state.case.detail.C.underlyingArchitecture;
+  const cur = f.current || {};
+  const disabledAttr = fieldEditable() ? '' : 'disabled';
+  const hasDiff = JSON.stringify(f.current) !== JSON.stringify(f.original);
+
+  return `<div class="field-row">
+    <div class="field-block">
+      <label class="field-label">底層技術架構</label>
+      <label class="field-sublabel">架構總覽</label>
+      <textarea class="field-textarea small" data-arch-field="summary" ${disabledAttr}>${escapeHtml(cur.summary)}</textarea>
+      <label class="field-sublabel">資料流向</label>
+      <textarea class="field-textarea small" data-arch-field="dataFlow" ${disabledAttr}>${escapeHtml(cur.dataFlow)}</textarea>
+      <label class="field-sublabel">部署環境</label>
+      <textarea class="field-textarea small" data-arch-field="deploymentEnvironment" ${disabledAttr}>${escapeHtml(cur.deploymentEnvironment)}</textarea>
+    </div>
+    <div class="side-panel">
+      <div class="changelog-card">
+        <div class="changelog-title">📄 變更記錄</div>
+        <div class="changelog-time">DRI 修改於 ${f.savedAt || '—'}</div>
+        ${!hasDiff ? '<div class="diff-none">無修改</div>' : ''}
+      </div>
+      ${renderCommentThread('C.underlyingArchitecture')}
+    </div>
+  </div>`;
+}
+
+function renderArchitectureSectionManager() {
+  const f = state.case.detail.C.underlyingArchitecture;
+  const cur = f.current || {};
+  const hasDiff = JSON.stringify(f.current) !== JSON.stringify(f.original);
+
+  return `<div class="field-row">
+    <div class="field-block readonly">
+      <label class="field-label">底層技術架構</label>
+      <div class="section-card">
+        <p><strong>架構總覽：</strong>${escapeHtml(cur.summary)}</p>
+      </div>
+      <div class="section-card" style="margin-top:8px">
+        <p><strong>資料流向：</strong>${escapeHtml(cur.dataFlow)}</p>
+      </div>
+      ${cur.deploymentEnvironment ? `
+      <div class="section-card" style="margin-top:8px">
+        <p><strong>部署環境：</strong>${escapeHtml(cur.deploymentEnvironment)}</p>
+      </div>` : ''}
+    </div>
+    <div class="side-panel">
+      <div class="changelog-card">
+        <div class="changelog-title">📄 變更記錄</div>
+        <div class="changelog-time">DRI 修改於 ${f.savedAt || '—'}</div>
+        ${!hasDiff ? '<div class="diff-none">無修改</div>' : ''}
+      </div>
+      ${renderCommentThread('C.underlyingArchitecture')}
     </div>
   </div>`;
 }
@@ -362,9 +479,13 @@ function renderContent() {
   if (MODE === 'dri') {
     html += FIELD_DEFS[tab].map((def) => renderFieldDri(tab, def)).join('');
     if (tab === 'A') html += renderKpiSectionDri();
+    if (tab === 'C') html += renderModulesSectionDri() + renderArchitectureSectionDri();
   } else {
-    html += FIELD_DEFS[tab].map((def) => renderFieldManager(tab, def)).join('');
+    html += FIELD_DEFS[tab]
+      .filter((def) => !(def.key === 'teamSize' && isEmptyValue(state.case.detail[tab][def.key].current)))
+      .map((def) => renderFieldManager(tab, def)).join('');
     if (tab === 'A') html += renderKpiSectionManager();
+    if (tab === 'C') html += renderModulesSectionManager() + renderArchitectureSectionManager();
   }
   el.innerHTML = html;
   el.querySelectorAll('.field-textarea.autosize').forEach(autoGrowTextarea);
@@ -508,6 +629,17 @@ document.addEventListener('DOMContentLoaded', () => {
       const idx = Number(t_.dataset.kpiIdx);
       state.case.detail.A.kpis[idx][t_.dataset.kpiField].current = t_.value;
       state.dirty.add(`A.kpis.${idx}.${t_.dataset.kpiField}`);
+      return;
+    }
+    if (t_.dataset.moduleIdx !== undefined) {
+      const idx = Number(t_.dataset.moduleIdx);
+      state.case.detail.C.systemModules.current[idx][t_.dataset.moduleField] = t_.value;
+      state.dirty.add(`C.systemModules.${idx}.${t_.dataset.moduleField}`);
+      return;
+    }
+    if (t_.dataset.archField !== undefined) {
+      state.case.detail.C.underlyingArchitecture.current[t_.dataset.archField] = t_.value;
+      state.dirty.add(`C.underlyingArchitecture.${t_.dataset.archField}`);
       return;
     }
     if (t_.classList.contains('comment-new-textarea')) {

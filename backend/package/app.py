@@ -6,7 +6,7 @@ from sqlalchemy import text
 from sqlalchemy.orm import Session
 from mangum import Mangum
 
-from db import get_db
+from db_service import get_db
 from common import (
     DEFAULT_ICON,
     FRONTEND_DIR,

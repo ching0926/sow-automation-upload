@@ -40,27 +40,30 @@ def derive_description(customer_context: dict) -> str:
     return challenge[:60] + ("…" if len(challenge) > 60 else "")
 
 
-def fetch_tags(db: Session, sow_id: int) -> dict:
+def fetch_skills(db: Session, sow_id: int) -> dict:
     rows = db.execute(
         text(
             """
-            SELECT t.tag_category, t.tag_name, t.category
-            FROM sow_tag_relation r
-            JOIN tag_definition t ON t.tag_id = r.tag_id
-            WHERE r.sow_id = :sow_id AND t.is_active = true
-            ORDER BY t.tag_category, t.tag_name
+            SELECT sl.category, sl.skill
+            FROM sow_skill_relation r
+            JOIN skill_list sl ON sl.id = r.skill_id
+            WHERE r.sow_id = :sow_id
+            ORDER BY sl.category, sl.skill
             """
         ),
         {"sow_id": sow_id},
     ).mappings().all()
-    grouped = {"INDUSTRY": [], "SERVICE_DOMAIN": [], "USE_CASE": [], "TECH_PLATFORM": []}
-    tech_categories = []
+    categories = []
+    by_category: dict = {}
     for row in rows:
-        grouped.setdefault(row["tag_category"], []).append(row["tag_name"])
-        if row["tag_category"] == "TECH_PLATFORM" and row["category"] and row["category"] not in tech_categories:
-            tech_categories.append(row["category"])
-    grouped["TECH_PLATFORM_CATEGORY"] = tech_categories
-    return grouped
+        if row["category"] not in categories:
+            categories.append(row["category"])
+        by_category.setdefault(row["category"], []).append(row["skill"])
+    return {
+        "skills": [row["skill"] for row in rows],
+        "categories": categories,
+        "by_category": by_category,
+    }
 
 
 def fetch_nda_cost(db: Session, job_code: str):

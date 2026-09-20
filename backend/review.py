@@ -8,7 +8,7 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from db import get_db
-from common import derive_title, fetch_nda_cost, fetch_structured_content, fetch_tags, format_number
+from common import derive_title, fetch_nda_cost, fetch_nda_department, fetch_structured_content, format_number
 
 router = APIRouter(prefix="/api/review")
 
@@ -36,10 +36,21 @@ class ProjectPlanningIn(BaseModel):
     deliverables: List[str] = []
 
 
+class SystemModuleIn(BaseModel):
+    moduleName: str = ""
+    responsibility: str = ""
+
+
+class UnderlyingArchitectureIn(BaseModel):
+    summary: str = ""
+    dataFlow: str = ""
+    deploymentEnvironment: str = ""
+
+
 class TechnicalDesignIn(BaseModel):
     coreFunctions: List[str] = []
-    architecture: List[str] = []
-    techStack: List[str] = []
+    systemModules: List[SystemModuleIn] = []
+    underlyingArchitecture: UnderlyingArchitectureIn = UnderlyingArchitectureIn()
 
 
 class DraftSaveIn(BaseModel):
@@ -77,6 +88,22 @@ def _field(original, current, saved_at):
     return {"original": original, "current": current, "savedAt": saved_at}
 
 
+def _modules_camel(modules):
+    return [
+        {"moduleName": m.get("module_name", ""), "responsibility": m.get("responsibility", "")}
+        for m in (modules or [])
+    ]
+
+
+def _architecture_camel(architecture):
+    architecture = architecture or {}
+    return {
+        "summary": architecture.get("summary", ""),
+        "dataFlow": architecture.get("data_flow", ""),
+        "deploymentEnvironment": architecture.get("deployment_environment", ""),
+    }
+
+
 def _int_or_raw(value):
     try:
         return int(value)
@@ -102,8 +129,14 @@ def _to_snake_content(body: DraftSaveIn):
     }
     technical_design = {
         "core_functions": td.coreFunctions,
-        "architecture_nodes": td.architecture,
-        "tech_stack": td.techStack,
+        "system_modules": [
+            {"module_name": m.moduleName, "responsibility": m.responsibility} for m in td.systemModules
+        ],
+        "underlying_architecture": {
+            "summary": td.underlyingArchitecture.summary,
+            "data_flow": td.underlyingArchitecture.dataFlow,
+            "deployment_environment": td.underlyingArchitecture.deploymentEnvironment,
+        },
     }
     return customer_context, project_planning, technical_design
 
@@ -153,9 +186,11 @@ def _resolve_reviewer_email(db: Session, sow_id: int, role: str) -> str:
     return (row[column] if row else None) or ""
 
 
-def _ensure_draft(db: Session, sow_id: int):
-    """DRI 第一次打開審查頁時，從 version=1 的原始萃取內容建立暫存的第一版（version=1）。"""
-    db.execute(
+def _ensure_draft(db: Session, sow_id: int, nda_man_days=None, nda_total_cost=None, nda_owner=None):
+    """DRI 第一次打開審查頁時，從 version=1 的原始萃取內容建立暫存的第一版（version=1）。
+    若當下 job_code 已經有 NDA 工作站的權威資料（人天/成本/DRI 部門），第一版直接用 NDA 值
+    取代 AI 猜測值作為起始值；這幾個欄位之後就是一般可編輯欄位，DRI/主管都能再自行調整並存檔。"""
+    result = db.execute(
         text(
             """
             INSERT INTO sow_review_draft (sow_id, version, customer_context, project_planning, technical_design)
@@ -163,17 +198,33 @@ def _ensure_draft(db: Session, sow_id: int):
             FROM sow_structured_content
             WHERE sow_id = :sow_id AND version = 1
             ON CONFLICT (sow_id, version) DO NOTHING
+            RETURNING sow_id
             """
         ),
         {"sow_id": sow_id},
     )
+    inserted = result.first() is not None
+    if inserted and (nda_man_days is not None or nda_total_cost is not None or nda_owner is not None):
+        db.execute(
+            text(
+                """
+                UPDATE sow_review_draft
+                SET project_planning = project_planning
+                    || CASE WHEN :man_days IS NOT NULL THEN jsonb_build_object('man_days', CAST(:man_days AS text)) ELSE '{}'::jsonb END
+                    || CASE WHEN :total_cost IS NOT NULL THEN jsonb_build_object('total_cost', CAST(:total_cost AS text)) ELSE '{}'::jsonb END
+                    || CASE WHEN :owner IS NOT NULL THEN jsonb_build_object('owner', CAST(:owner AS text)) ELSE '{}'::jsonb END
+                WHERE sow_id = :sow_id AND version = 1
+                """
+            ),
+            {"sow_id": sow_id, "man_days": nda_man_days, "total_cost": nda_total_cost, "owner": nda_owner},
+        )
 
 
 def build_review_case(db: Session, sow_id: int):
     doc = db.execute(
         text(
             """
-            SELECT id, file_name, dri_status, manager_status, dri_submitted_at, manager_reviewed_at, created_at, job_code
+            SELECT id, file_name, dri_status, manager_status, dri_submitted_at, manager_reviewed_at, created_at, job_code, industry
             FROM sow_document WHERE id = :id
             """
         ),
@@ -182,7 +233,18 @@ def build_review_case(db: Session, sow_id: int):
     if not doc:
         return None
 
-    _ensure_draft(db, sow_id)
+    nda_department = fetch_nda_department(db, doc.get("job_code"))
+    nda_cost = fetch_nda_cost(db, doc.get("job_code"))
+    nda_available = bool(
+        nda_cost and nda_cost["estimated_mandays"] is not None and nda_cost["total_cost"] is not None
+    )
+    _ensure_draft(
+        db,
+        sow_id,
+        nda_man_days=format_number(nda_cost["estimated_mandays"]) if nda_available else None,
+        nda_total_cost=format_number(nda_cost["total_cost"]) if nda_available else None,
+        nda_owner=nda_department,
+    )
     db.commit()
 
     original_row = fetch_structured_content(db, sow_id, version=1)
@@ -205,8 +267,6 @@ def build_review_case(db: Session, sow_id: int):
         ),
         {"id": sow_id},
     ).mappings().all()
-    tags = fetch_tags(db, sow_id)
-
     cc_o = (original_row or {}).get("customer_context") or {}
     pp_o = (original_row or {}).get("project_planning") or {}
     td_o = (original_row or {}).get("technical_design") or {}
@@ -228,26 +288,22 @@ def build_review_case(db: Session, sow_id: int):
             }
         )
 
-    industry = tags["INDUSTRY"][0] if tags["INDUSTRY"] else "Unknown"
+    industry = doc["industry"] or "Unknown"
 
-    nda_cost = fetch_nda_cost(db, doc.get("job_code"))
-    nda_available = bool(
-        nda_cost and nda_cost["estimated_mandays"] is not None and nda_cost["total_cost"] is not None
-    )
+    # owner（DRI 部門）跟 man_days/total_cost 一樣：有 NDA 權威資料就拿來當「起始基準」
+    # （原本 AI 猜的值就不用了），但不鎖住——DRI/主管在審查時都可以再自行調整，調整後
+    # 存進 sow_review_draft，跟其他一般欄位（period、teamSize…）走同一套編輯/存檔流程，
+    # 所以這裡不設 "source" 鎖定標記。
+    owner_baseline = nda_department or pp_o.get("owner", "")
+    owner_field = _field(owner_baseline, pp_c.get("owner", owner_baseline), saved_at)
     if nda_available:
-        man_days_field = _field(
-            format_number(nda_cost["estimated_mandays"]), format_number(nda_cost["estimated_mandays"]), saved_at
-        )
-        man_days_field["source"] = "nda"
-        total_cost_field = _field(
-            format_number(nda_cost["total_cost"]), format_number(nda_cost["total_cost"]), saved_at
-        )
-        total_cost_field["source"] = "nda"
+        man_days_baseline = format_number(nda_cost["estimated_mandays"])
+        total_cost_baseline = format_number(nda_cost["total_cost"])
     else:
-        man_days_field = _field(pp_o.get("man_days", 0), pp_c.get("man_days", 0), saved_at)
-        man_days_field["source"] = "ai"
-        total_cost_field = _field(pp_o.get("total_cost", ""), pp_c.get("total_cost", ""), saved_at)
-        total_cost_field["source"] = "ai"
+        man_days_baseline = pp_o.get("man_days", 0)
+        total_cost_baseline = pp_o.get("total_cost", "")
+    man_days_field = _field(man_days_baseline, pp_c.get("man_days", man_days_baseline), saved_at)
+    total_cost_field = _field(total_cost_baseline, pp_c.get("total_cost", total_cost_baseline), saved_at)
 
     return {
         "sowId": doc["id"],
@@ -265,17 +321,25 @@ def build_review_case(db: Session, sow_id: int):
                 "kpis": kpis,
             },
             "B": {
-                "owner": _field(pp_o.get("owner", ""), pp_c.get("owner", ""), saved_at),
+                "owner": owner_field,
                 "period": _field(pp_o.get("period", ""), pp_c.get("period", ""), saved_at),
-                "teamSize": _field(pp_o.get("team_size", 0), pp_c.get("team_size", 0), saved_at),
+                "teamSize": _field(pp_o.get("team_size"), pp_c.get("team_size"), saved_at),
                 "manDays": man_days_field,
                 "totalCost": total_cost_field,
                 "deliverables": _field(pp_o.get("deliverables", []), pp_c.get("deliverables", []), saved_at),
             },
             "C": {
                 "coreFunctions": _field(td_o.get("core_functions", []), td_c.get("core_functions", []), saved_at),
-                "architecture": _field(td_o.get("architecture_nodes", []), td_c.get("architecture_nodes", []), saved_at),
-                "techStack": _field(td_o.get("tech_stack", []), td_c.get("tech_stack", []), saved_at),
+                "systemModules": _field(
+                    _modules_camel(td_o.get("system_modules", [])),
+                    _modules_camel(td_c.get("system_modules", [])),
+                    saved_at,
+                ),
+                "underlyingArchitecture": _field(
+                    _architecture_camel(td_o.get("underlying_architecture", {})),
+                    _architecture_camel(td_c.get("underlying_architecture", {})),
+                    saved_at,
+                ),
             },
         },
         "comments": [

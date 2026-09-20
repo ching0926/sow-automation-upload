@@ -53,15 +53,33 @@ function persist() {
 
 function caseById(id) { return CASES.find(c => c.id === Number(id)); }
 
+function getUsedTechCategories() {
+  return new Set(CASES.flatMap(c => c.techCategory));
+}
+
+// 某個 category 底下，實際被案例掛過的 skill（跨所有案例取聯集）——
+// 直接來自案例本身的 skillsByCategory（真實 sow_id 關聯資料），不查靜態的 SKILL_TAXONOMY，
+// 因為 SKILL_TAXONOMY（tag_definition 那份參考表）跟案例實際掛的 skill_list 是兩份會脫勾的資料。
+function getUsedSkillsForCategories(categories) {
+  const set = new Set();
+  CASES.forEach(c => {
+    categories.forEach(cat => {
+      (c.skillsByCategory[cat] || []).forEach(s => set.add(s));
+    });
+  });
+  return set;
+}
+
 function getFilterOptions() {
+  const usedCategories = getUsedTechCategories();
   const stagedCategories = state.stagedFilters.category || [];
   const skillOptions = stagedCategories.length
-    ? [...new Set(stagedCategories.flatMap(cat => SKILL_TAXONOMY[cat] || []))]
+    ? [...getUsedSkillsForCategories(stagedCategories)]
     : [];
   return {
     industry: [...new Set(CASES.map(c => c.industry))],
     driDepartment: [...new Set(CASES.map(c => c.driDepartment).filter(Boolean))],
-    category: Object.keys(SKILL_TAXONOMY),
+    category: [...usedCategories],
     skill: skillOptions,
   };
 }
@@ -256,34 +274,41 @@ function sectionsTabB(c) {
         ${statusRow}
       </div>`,
     },
-    {
+  ];
+  if (b.teamSize != null) {
+    sections.push({
       id: 'sec-team', titleKey: 'b_team', body: `
       <div class="team-row">
         <div class="team-chip">👥 ${state.lang === 'zh' ? '團隊總人數' : 'Total'} <strong>${b.teamSize} ${t(state.lang, 'b_person_unit')}</strong></div>
         ${(b.team || []).map(m => `<div class="team-chip">👤 ${L('role', m.role, state.lang)} <strong>${m.count}</strong></div>`).join('')}
       </div>`,
-    },
+    });
+  }
+  sections.push(
     {
       id: 'sec-manday', titleKey: 'b_manday', body: `
-      <div class="kpi-row kpi-row-single">
-        <div class="kpi-card">
-          <div class="kpi-icon">🗓️</div>
-          <div class="kpi-value">${b.cost.manDays} ${t(state.lang, 'b_manday_unit')}</div>
-          <div class="kpi-label">${t(state.lang, 'b_manday')}</div>
+      <div class="metric-box metric-box-manday">
+        <div class="metric-icon-circle">🗓️</div>
+        <div class="metric-divider"></div>
+        <div class="metric-content">
+          <div class="metric-caption">${t(state.lang, 'b_total_label')}</div>
+          <div class="metric-value-row"><span class="metric-value">${b.cost.manDays}</span><span class="metric-unit">${t(state.lang, 'b_manday_unit')}</span></div>
         </div>
       </div>`,
     },
     {
       id: 'sec-projcost', titleKey: 'b_projcost', body: `
-      <div class="kpi-row kpi-row-single">
-        <div class="kpi-card">
-          <div class="kpi-icon">💰</div>
-          <div class="kpi-value">${b.cost.total}</div>
-          <div class="kpi-label">${t(state.lang, 'b_projcost')}</div>
+      <div class="metric-box metric-box-cost">
+        <div class="metric-icon-circle">💰</div>
+        <div class="metric-divider"></div>
+        <div class="metric-content">
+          <div class="metric-caption">${t(state.lang, 'b_total_label')}</div>
+          <div class="metric-value-row"><span class="metric-value">${b.cost.total}</span></div>
+          <div class="metric-subcaption">USD</div>
         </div>
       </div>`,
     },
-  ];
+  );
   if ((b.wbs || []).length) {
     sections.push({
       id: 'sec-wbs', titleKey: 'b_wbs', body: `
@@ -304,54 +329,29 @@ function sectionsTabB(c) {
   return sections;
 }
 
-const MODULE_NODES = ['ai_portal', 'n8n_workflow', 'claude_bedrock'];
-
 function sectionsTabC(c) {
   const cc = c.detail.C;
-  const keywords = [
-    ...c.serviceCategory.map(s => L('service', s, state.lang)),
-    ...c.useCase.map(s => L('usecase', s, state.lang)),
-    ...c.skills.map(s => L('skill', s, state.lang)),
-    c.industry,
-  ];
-  const modules = cc.architecture.filter(n => MODULE_NODES.includes(n));
-  const sections = [
+  const ua = cc.underlyingArchitecture || {};
+  return [
     {
       id: 'sec-corefunc', titleKey: 'c_corefunctions', body: `
-      <div class="chip-row">${cc.coreFunctions.map(x => `<span class="tag tag-purple">${L('corefunction', x, state.lang)}</span>`).join('')}</div>`,
+      <ul class="bullet-list">${cc.coreFunctions.map(x => `<li>• ${x}</li>`).join('')}</ul>`,
     },
-  ];
-  if (modules.length) {
-    sections.push({
+    {
       id: 'sec-modules', titleKey: 'c_modules', body: `
-      <div class="arch-row">
-        ${modules.map(node => `
-          <div class="arch-box">
-            <div class="arch-name">${L('archNode', node, state.lang)} ${state.lang === 'zh' ? '模組' : 'Module'}</div>
-            <ul>${(LABELS.archNodeDetail[node] ? LABELS.archNodeDetail[node][state.lang] : []).map(d => `<li>${d}</li>`).join('')}</ul>
-          </div>`).join('')}
-      </div>`,
-    });
-  }
-  sections.push(
+      <ul class="bullet-list">${(cc.modules || []).map(m => `<li>• <strong>${m.moduleName}</strong>${m.responsibility ? `：${m.responsibility}` : ''}</li>`).join('')}</ul>`,
+    },
     {
       id: 'sec-techarch', titleKey: 'c_techarch', body: `
-      <div class="arch-row">
-        ${cc.architecture.map((node, i) => `
-          ${i > 0 ? '<div class="arch-arrow">→</div>' : ''}
-          <div class="arch-box">
-            <div class="arch-name">${L('archNode', node, state.lang)}</div>
-            <ul>${(LABELS.archNodeDetail[node] ? LABELS.archNodeDetail[node][state.lang] : []).map(d => `<li>${d}</li>`).join('')}</ul>
-          </div>`).join('')}
-      </div>
-      <div class="chip-row" style="margin-top:10px">${cc.techStack.map(x => `<span class="tag tag-blue">${LABELS.techstack[x] || x}</span>`).join('')}</div>`,
+      <div class="section-card"><p><strong>${t(state.lang, 'c_arch_summary')}：</strong>${ua.summary || ''}</p></div>
+      <div class="section-card" style="margin-top:8px"><p><strong>${t(state.lang, 'c_arch_dataflow')}：</strong>${ua.dataFlow || ''}</p></div>
+      ${ua.deploymentEnvironment ? `<div class="section-card" style="margin-top:8px"><p><strong>${t(state.lang, 'c_arch_deploy')}：</strong>${ua.deploymentEnvironment}</p></div>` : ''}`,
     },
     {
       id: 'sec-keywords', titleKey: 'c_keywords', body: `
-      <div class="chip-row">${keywords.map(k => `<span class="tag tag-gray">${k}</span>`).join('')}</div>`,
+      <div class="chip-row">${c.skills.map(k => `<span class="tag tag-gray">${k}</span>`).join('')}</div>`,
     },
-  );
-  return sections;
+  ];
 }
 
 function sectionsForTab(c, tab) {
@@ -381,8 +381,7 @@ function renderPanel() {
     </div>` : '';
 
   const sections = sectionsForTab(c, state.previewTab);
-  const quicklinksHtml = `<div class="quicklinks">${sections.map(s => `<button class="quicklink-btn" data-scrollto="${s.id}">${t(state.lang, s.titleKey)}</button>`).join('')}</div>`;
-  const contentHtml = sections.map(s => `<div class="panel-section" id="${s.id}"><div class="section-title standalone">${t(state.lang, s.titleKey)}</div>${s.body}</div>`).join('');
+  const contentHtml = sections.map(s => `<div class="panel-section"><div class="section-title standalone">${t(state.lang, s.titleKey)}</div>${s.body}</div>`).join('');
 
   const isFullscreen = drawer.classList.contains('fullscreen');
   const headerBtns = isFullscreen
@@ -418,7 +417,6 @@ function renderPanel() {
         </div>
         ${tabsHtml}
         <div class="panel-content" id="panel-content">
-          ${quicklinksHtml}
           ${contentHtml}
         </div>
       </div>
@@ -607,12 +605,6 @@ document.addEventListener('DOMContentLoaded', async () => {
     if (t_.id === 'preview-back-btn') { document.getElementById('preview-drawer').classList.remove('fullscreen'); renderPanel(); return; }
     const tabBtn = t_.closest('.tab-btn');
     if (tabBtn) { state.previewTab = tabBtn.dataset.tab; renderPanel(); return; }
-    const quicklinkBtn = t_.closest('.quicklink-btn');
-    if (quicklinkBtn) {
-      const target = document.getElementById(quicklinkBtn.dataset.scrollto);
-      if (target) target.scrollIntoView({ behavior: 'smooth', block: 'start' });
-      return;
-    }
 
     // interest modal
     if (t_.id === 'interest-open-btn') { state.interestModal = 'confirm'; resetInterestForm(); renderInterestModal(); return; }
@@ -637,7 +629,7 @@ document.addEventListener('DOMContentLoaded', async () => {
       state.stagedFilters[dim] = [...set];
       if (dim === 'category') {
         // category 一變動，skill 選項跟著改變（cascading），把不再屬於任何已選 category 的 skill 移除
-        const validSkills = new Set(state.stagedFilters.category.flatMap(cat => SKILL_TAXONOMY[cat] || []));
+        const validSkills = getUsedSkillsForCategories(state.stagedFilters.category);
         state.stagedFilters.skill = state.stagedFilters.skill.filter(s => validSkills.has(s));
       }
       renderFilterBar(); return;

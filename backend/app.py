@@ -20,8 +20,8 @@ from common import (
     derive_title,
     fetch_nda_cost,
     fetch_nda_department,
+    fetch_skills,
     fetch_structured_content,
-    fetch_tags,
     format_number,
 )
 from review import router as review_router
@@ -37,13 +37,17 @@ class InterestRequest(BaseModel):
 
 
 def build_case(db: Session, doc: dict) -> dict:
-    tags = fetch_tags(db, doc["id"])
+    doc_skills = fetch_skills(db, doc["id"])
     content_row = fetch_structured_content(db, doc["id"])
     customer_context = (content_row or {}).get("customer_context") or {}
     project_planning = (content_row or {}).get("project_planning") or {}
     technical_design = (content_row or {}).get("technical_design") or {}
+    underlying_architecture = technical_design.get("underlying_architecture") or {}
 
-    industry = tags["INDUSTRY"][0] if tags["INDUSTRY"] else "Unknown"
+    industry = doc["industry"] or "Unknown"
+
+    nda_department = fetch_nda_department(db, doc.get("job_code"))
+    owner = nda_department or project_planning.get("owner", "")
 
     nda_cost = fetch_nda_cost(db, doc.get("job_code"))
     man_days = (
@@ -72,11 +76,12 @@ def build_case(db: Session, doc: dict) -> dict:
         "title": bi(derive_title(doc["file_name"])),
         "description": bi(derive_description(customer_context)),
         "contactItemName": derive_contact_item_name(doc["file_name"]),
-        "serviceCategory": tags["SERVICE_DOMAIN"],
-        "useCase": tags["USE_CASE"],
-        "skills": tags["TECH_PLATFORM"],
-        "techCategory": tags["TECH_PLATFORM_CATEGORY"],
-        "driDepartment": fetch_nda_department(db, doc.get("job_code")),
+        "serviceCategory": [],
+        "useCase": [],
+        "skills": doc_skills["skills"],
+        "techCategory": doc_skills["categories"],
+        "skillsByCategory": doc_skills["by_category"],
+        "driDepartment": nda_department,
         "date": doc["created_at"].date().isoformat() if doc["created_at"] else "",
         "creator": doc["edited_by"] or doc["approved_by"] or "—",
         "detail": {
@@ -87,9 +92,9 @@ def build_case(db: Session, doc: dict) -> dict:
                 "kpis": kpis,
             },
             "B": {
-                "owner": project_planning.get("owner", ""),
+                "owner": owner,
                 "period": project_planning.get("period", ""),
-                "teamSize": project_planning.get("team_size", 0),
+                "teamSize": project_planning.get("team_size"),
                 "team": [],
                 "cost": {
                     "manDays": man_days,
@@ -100,8 +105,15 @@ def build_case(db: Session, doc: dict) -> dict:
             },
             "C": {
                 "coreFunctions": technical_design.get("core_functions", []),
-                "architecture": technical_design.get("architecture_nodes", []),
-                "techStack": technical_design.get("tech_stack", []),
+                "modules": [
+                    {"moduleName": m.get("module_name", ""), "responsibility": m.get("responsibility", "")}
+                    for m in technical_design.get("system_modules", [])
+                ],
+                "underlyingArchitecture": {
+                    "summary": underlying_architecture.get("summary", ""),
+                    "dataFlow": underlying_architecture.get("data_flow", ""),
+                    "deploymentEnvironment": underlying_architecture.get("deployment_environment", ""),
+                },
             },
         },
     }
@@ -112,7 +124,7 @@ def list_cases(db: Session = Depends(get_db)):
     docs = db.execute(
         text(
             """
-            SELECT id, file_name, edited_by, approved_by, created_at, job_code
+            SELECT id, file_name, edited_by, approved_by, created_at, job_code, industry
             FROM sow_document
             WHERE is_latest = true AND dri_status = 'approve' AND manager_status = 'approve'
             ORDER BY created_at DESC
@@ -127,7 +139,7 @@ def get_case(sow_id: int, db: Session = Depends(get_db)):
     doc = db.execute(
         text(
             """
-            SELECT id, file_name, edited_by, approved_by, created_at, job_code
+            SELECT id, file_name, edited_by, approved_by, created_at, job_code, industry
             FROM sow_document
             WHERE id = :id AND dri_status = 'approve' AND manager_status = 'approve'
             """
@@ -164,7 +176,7 @@ def get_skill_taxonomy(db: Session = Depends(get_db)):
         text(
             """
             SELECT DISTINCT category, skill_name FROM tag_definition
-            WHERE tag_category = 'TECH_PLATFORM' AND category IS NOT NULL AND skill_name IS NOT NULL
+            WHERE category IS NOT NULL AND skill_name IS NOT NULL
               AND is_active = true
             ORDER BY category, skill_name
             """

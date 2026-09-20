@@ -1,5 +1,5 @@
 from sqlalchemy import text
-from db import engine  # 假設你剛剛建立的檔案叫 db.py
+from db_service import engine  # 假設你剛剛建立的檔案叫 db.py
 
 try:
     # 嘗試建立連線並發送一個最簡單的 SQL 查詢

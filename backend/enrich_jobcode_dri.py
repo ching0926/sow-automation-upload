@@ -11,7 +11,7 @@ import urllib.request
 from dotenv import load_dotenv
 from sqlalchemy import text
 
-from db import SessionLocal
+from db_service import SessionLocal
 
 load_dotenv()
 
