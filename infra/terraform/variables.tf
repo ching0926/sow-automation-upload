@@ -40,16 +40,22 @@ variable "key_pair_name" {
   default     = "sow-app-deploy-key"
 }
 
-variable "allowed_ssh_cidr" {
-  description = "CIDR allowed to SSH in (port 22). Leave as null to auto-detect the public IP of whoever runs `terraform apply` and allow only that /32; set explicitly if a different person applies or you need to SSH from elsewhere."
-  type        = string
-  default     = null
+variable "allowed_ssh_cidrs" {
+  description = <<-EOT
+    CIDRs allowed to SSH in (port 22). Defaults to the two known ECV office egress
+    IPs (same ones already whitelisted on the shared RDS's "local" security group) --
+    this company's outbound IP rotates between at least these two, so a single
+    auto-detected /32 kept breaking. Add more entries here (e.g. a colleague's IP,
+    or an office VPN CIDR) if more people need SSH access.
+  EOT
+  type    = list(string)
+  default = ["66.159.198.169/32", "66.159.198.185/32"]
 }
 
 variable "rds_db_instance_identifier" {
-  description = "Existing RDS instance identifier (a shared resource -- this terraform never modifies the instance itself, only reads its info and adds one ingress rule to one of its existing security groups)."
+  description = "Existing RDS instance identifier (a shared resource -- this terraform never modifies the instance itself, only reads its info and adds one ingress rule to one of its existing security groups). Renamed to sdx-ticket-database-1-private on 2026-09-20 when it was made non-publicly-accessible; update this if it's renamed/recreated again."
   type        = string
-  default     = "sdx-ticket-database-1"
+  default     = "sdx-ticket-database-1-private"
 }
 
 variable "rds_ingress_security_group_id" {
