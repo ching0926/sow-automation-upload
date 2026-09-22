@@ -1,4 +1,5 @@
 .env
+.env.production
 __pycache__/
 *.pyc
 package
@@ -11,3 +12,5 @@ infra/terraform/*.pem
 infra/terraform/crash.log
 infra/terraform/override.tf
 infra/terraform/*.tfvars
+
+mail_service

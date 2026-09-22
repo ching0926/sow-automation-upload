@@ -18,11 +18,13 @@ from common import (
     derive_contact_item_name,
     derive_description,
     derive_title,
+    ensure_nda_enriched,
     fetch_nda_cost,
     fetch_nda_department,
     fetch_skills,
     fetch_structured_content,
     format_number,
+    notify_case_interest,
 )
 from review import router as review_router
 
@@ -46,6 +48,7 @@ def build_case(db: Session, doc: dict) -> dict:
 
     industry = doc["industry"] or "Unknown"
 
+    ensure_nda_enriched(db, doc.get("job_code"))
     nda_department = fetch_nda_department(db, doc.get("job_code"))
     owner = nda_department or project_planning.get("owner", "")
 
@@ -167,6 +170,7 @@ def submit_interest(sow_id: int, body: InterestRequest, db: Session = Depends(ge
         {"cid": customer_id, "sid": sow_id},
     )
     db.commit()
+    notify_case_interest(db, sow_id, body.email.strip(), (body.message or "").strip())
     return {"ok": True}
 
 

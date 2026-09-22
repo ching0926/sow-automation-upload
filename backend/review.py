@@ -8,7 +8,14 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from db import get_db
-from common import derive_title, fetch_nda_cost, fetch_nda_department, fetch_structured_content, format_number
+from common import (
+    derive_title,
+    ensure_nda_enriched,
+    fetch_nda_cost,
+    fetch_nda_department,
+    fetch_structured_content,
+    format_number,
+)
 
 router = APIRouter(prefix="/api/review")
 
@@ -30,7 +37,7 @@ class CustomerContextIn(BaseModel):
 class ProjectPlanningIn(BaseModel):
     owner: str = ""
     period: str = ""
-    teamSize: Union[str, int] = ""
+    teamSize: Optional[Union[str, int]] = None
     manDays: Union[str, int] = ""
     totalCost: str = ""
     deliverables: List[str] = []
@@ -233,6 +240,7 @@ def build_review_case(db: Session, sow_id: int):
     if not doc:
         return None
 
+    ensure_nda_enriched(db, doc.get("job_code"))
     nda_department = fetch_nda_department(db, doc.get("job_code"))
     nda_cost = fetch_nda_cost(db, doc.get("job_code"))
     nda_available = bool(
