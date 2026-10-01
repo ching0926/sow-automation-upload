@@ -1,7 +1,7 @@
 // SOW 審查頁面邏輯。獨立於 frontend/js/app.js 維護，靠 window.REVIEW_MODE
 // ('dri' | 'manager') 區分 dri.html / manager.html 兩個頁面該怎麼渲染同一份資料模型。
-// 案例資料一律來自 backend/review.py 的 /api/review/cases/{job_code} 系列端點，
-// 案例 job_code 從網址 ?jobcode= 讀取。
+// 案例資料一律來自 backend/review.py 的 /api/review/cases/{token} 系列端點，
+// 案例 token（HMAC-SHA256(job_code)，不直接暴露 job_code）從網址 ?token= 讀取。
 
 const TAB_ORDER = ['A', 'B', 'C'];
 const TAB_LABEL = { A: '客戶脈絡與價值', B: '專案規劃與交付', C: '技術設計與架構' };
@@ -39,7 +39,7 @@ const STATUS_CLASS = {
 };
 
 const MODE = window.REVIEW_MODE === 'manager' ? 'manager' : 'dri';
-const JOB_CODE = new URLSearchParams(location.search).get('jobcode');
+const TOKEN = new URLSearchParams(location.search).get('token');
 
 const state = {
   tab: 'A',
@@ -114,8 +114,10 @@ function renderTopbar() {
   const actionsHtml = MODE === 'dri'
     ? `<button class="btn btn-ghost" data-action="save">儲存</button>
        <button class="btn btn-primary" data-action="submit" ${fieldEditable() ? '' : 'disabled'}>送出 DRI 審查</button>`
-    : `<button class="btn btn-ghost" data-action="return" ${state.case.status === 'MANAGER_REVIEW' ? '' : 'disabled'}>退回 DRI</button>
-       <button class="btn btn-primary" data-action="approve" ${state.case.status === 'MANAGER_REVIEW' ? '' : 'disabled'}>核准並發布</button>`;
+    // 主管的核准/退回改成回 Teams 卡片點 Yes/No 觸發（見 db_service.py），manager.html 這邊先註解掉、不要刪掉，之後有需要再恢復：
+    // : `<button class="btn btn-ghost" data-action="return" ${state.case.status === 'MANAGER_REVIEW' ? '' : 'disabled'}>退回 DRI</button>
+    //    <button class="btn btn-primary" data-action="approve" ${state.case.status === 'MANAGER_REVIEW' ? '' : 'disabled'}>核准並發布</button>`;
+    : '';
   document.getElementById('action-bar-top').innerHTML = actionsHtml;
   const bottomBar = document.getElementById('action-bar-bottom');
   if (bottomBar) bottomBar.innerHTML = actionsHtml;
@@ -151,7 +153,6 @@ function renderFieldDri(tab, def) {
   const hint = def.type === 'list'
     ? '<span class="field-hint">（每行一項）</span>'
     : ndaLocked ? '<span class="field-hint">（依 NDA 工作站資料鎖定，不可編輯）</span>'
-    : (def.key === 'teamSize' && isEmptyValue(f.current)) ? '<span class="field-hint">（無團隊總人數資料，若有請手動新增）</span>'
     : '';
 
   let editorHtml;
@@ -162,8 +163,11 @@ function renderFieldDri(tab, def) {
   } else if (def.type === 'textarea') {
     editorHtml = `<textarea class="field-textarea" data-path="${path}" data-type="text" ${disabledAttr}>${escapeHtml(f.current)}</textarea>`;
   } else {
+    const placeholderAttr = (def.key === 'teamSize' && isEmptyValue(f.current))
+      ? ' placeholder="若有團隊總人數請手動輸入，無則不會顯示此欄位"'
+      : '';
     editorHtml = `<div class="field-input-row">
-      <input class="field-input" data-path="${path}" data-type="text" value="${escapeAttr(f.current)}" ${disabledAttr} />
+      <input class="field-input" data-path="${path}" data-type="text" value="${escapeAttr(f.current)}"${placeholderAttr} ${disabledAttr} />
       ${def.unit ? `<span class="field-unit">${def.unit}</span>` : ''}
     </div>`;
   }
@@ -503,7 +507,7 @@ function render() {
 // ---------- actions ----------
 async function saveAll() {
   try {
-    state.case = await apiSaveDraft(JOB_CODE, buildDraftPayload());
+    state.case = await apiSaveDraft(TOKEN, buildDraftPayload());
     state.dirty.clear();
     render();
     showToast('已儲存');
@@ -515,8 +519,8 @@ async function saveAll() {
 async function submitReview() {
   try {
     // 先存檔，避免 DRI 忘記按「儲存」就直接送出，導致最後一次編輯遺失
-    await apiSaveDraft(JOB_CODE, buildDraftPayload());
-    state.case = await apiSubmitReview(JOB_CODE);
+    await apiSaveDraft(TOKEN, buildDraftPayload());
+    state.case = await apiSubmitReview(TOKEN);
     state.dirty.clear();
     render();
     showToast('已送出主管審查');
@@ -530,7 +534,7 @@ async function returnToDri() {
   const reason = prompt('退回理由（選填，留空可直接送出）：', '');
   if (reason === null) return;
   try {
-    state.case = await apiReturnToDri(JOB_CODE, { comment: reason || undefined });
+    state.case = await apiReturnToDri(TOKEN, { comment: reason || undefined });
     render();
     showToast('已退回 DRI 修改');
   } catch (e) {
@@ -543,7 +547,7 @@ async function submitNewComment(sectionKey) {
   if (!body) return;
   const authorRole = MODE === 'dri' ? 'DRI' : 'MANAGER';
   try {
-    state.case = await apiAddComment(JOB_CODE, { authorRole, body, sectionKey });
+    state.case = await apiAddComment(TOKEN, { authorRole, body, sectionKey });
     delete commentUi.drafts[sectionKey];
     refreshCommentThread(sectionKey);
   } catch (e) {
@@ -558,7 +562,7 @@ async function saveCommentEdit(id) {
   const authorRole = MODE === 'dri' ? 'DRI' : 'MANAGER';
   const sectionKey = sectionKeyForComment(id);
   try {
-    state.case = await apiUpdateComment(JOB_CODE, id, { authorRole, body });
+    state.case = await apiUpdateComment(TOKEN, id, { authorRole, body });
     commentUi.editingId = null;
     refreshCommentThread(sectionKey);
   } catch (e) {
@@ -571,7 +575,7 @@ async function deleteComment(id) {
   const authorRole = MODE === 'dri' ? 'DRI' : 'MANAGER';
   const sectionKey = sectionKeyForComment(id);
   try {
-    state.case = await apiDeleteComment(JOB_CODE, id, { authorRole });
+    state.case = await apiDeleteComment(TOKEN, id, { authorRole });
     commentUi.openMenuId = null;
     refreshCommentThread(sectionKey);
   } catch (e) {
@@ -582,7 +586,7 @@ async function deleteComment(id) {
 async function approveAndPublish() {
   if (!confirm('確定要核准並發布到案例庫嗎？')) return;
   try {
-    state.case = await apiApprove(JOB_CODE);
+    state.case = await apiApprove(TOKEN);
     render();
     showToast('已核准並發布至案例庫');
   } catch (e) {
@@ -592,14 +596,14 @@ async function approveAndPublish() {
 
 // ---------- init ----------
 async function init() {
-  if (!JOB_CODE) {
+  if (!TOKEN) {
     document.getElementById('review-content').innerHTML = '<div class="section-heading">缺少案例 Job Code，請確認連結是否完整。</div>';
     return;
   }
 
   document.getElementById('review-content').innerHTML = '<div class="section-heading">載入中…</div>';
   try {
-    state.case = await apiGetReviewCase(JOB_CODE);
+    state.case = await apiGetReviewCase(TOKEN);
   } catch (e) {
     document.getElementById('review-content').innerHTML = `<div class="section-heading">載入失敗：${escapeHtml(e.message)}</div>`;
     return;

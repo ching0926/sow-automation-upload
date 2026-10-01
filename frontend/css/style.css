@@ -9,6 +9,17 @@
   --text-muted: #64748b;
   --radius: 12px;
   --shadow: 0 1px 3px rgba(16, 24, 40, 0.06), 0 1px 2px rgba(16, 24, 40, 0.04);
+
+  /* 案例詳情面板（客戶脈絡與價值／專案規劃與交付／技術設計與架構）專用 token，對齊 UI介面設計/案例平台css參考.css */
+  --primary-600: #1769C2;
+  --primary-500: #2474D8;
+  --primary-300: #6EA8E8;
+  --primary-100: #D9E4F2;
+  --primary-50: #EAF2FC;
+  --text-primary: #172B4D;
+  --text-secondary: #5E6C84;
+  --surface-subtle: #F7F9FC;
+  --border-soft: #D9E4F2;
 }
 
 * { box-sizing: border-box; }
@@ -196,19 +207,20 @@ button { font-family: inherit; cursor: pointer; }
 
 .panel-section { margin-bottom: 4px; }
 
-.panel-content .section-title { font-size: 13.5px; font-weight: 700; margin-bottom: 10px; }
+.panel-content .section-title { font-size: 18px; font-weight: 600; color: var(--text-primary); margin-bottom: 10px; }
 .panel-content .section-title.standalone { margin-top: 22px; }
 .two-col { display: grid; grid-template-columns: 1fr; gap: 12px; }
 .preview-drawer.fullscreen .two-col { grid-template-columns: 1fr 1fr; gap: 16px; }
-.section-card { background: var(--bg); border: 1px solid var(--border); border-radius: 10px; padding: 14px; }
+.section-card { background: var(--surface-subtle); border: 1px solid var(--border-soft); border-radius: 8px; padding: 20px 24px; }
 .section-card p { font-size: 13px; line-height: 1.6; margin: 0; color: var(--text); }
 
 /* ---------- 專案規劃與交付：人天估算／專案成本（跟區塊等寬的大方框） ---------- */
-.metric-box { display: flex; align-items: center; gap: 20px; padding: 20px 24px; border-radius: 14px; }
+.metric-box { display: flex; align-items: center; gap: 20px; padding: 20px 24px; border-radius: 14px; border: 1px solid var(--border-soft); }
 .metric-icon-circle {
   flex: none; width: 56px; height: 56px; border-radius: 50%;
   display: flex; align-items: center; justify-content: center; font-size: 26px;
 }
+.metric-icon-img { width: 28px; height: 28px; object-fit: contain; display: block; }
 .metric-divider { flex: none; width: 1px; align-self: stretch; background: rgba(0, 0, 0, 0.12); }
 .metric-content { flex: 1; min-width: 0; }
 .metric-caption { font-size: 12px; color: var(--text-muted); margin-bottom: 4px; }
@@ -217,18 +229,18 @@ button { font-family: inherit; cursor: pointer; }
 .metric-unit { font-size: 13px; font-weight: 600; color: var(--text-muted); }
 .metric-subcaption { font-size: 12px; color: var(--text-muted); margin-top: 4px; }
 
-.metric-box-manday { background: #eef7f0; }
-.metric-box-manday .metric-icon-circle { background: #d7f0dc; }
-.metric-box-manday .metric-value { color: #2f9e44; }
+.metric-box-manday { background: var(--surface-subtle); }
+.metric-box-manday .metric-icon-circle { background: var(--primary-50); }
+.metric-box-manday .metric-value { color: var(--primary-600); }
 
-.metric-box-cost { background: #fdf3e6; }
-.metric-box-cost .metric-icon-circle { background: #fbe4c0; }
-.metric-box-cost .metric-value { color: #d9822b; }
+.metric-box-cost { background: var(--surface-subtle); }
+.metric-box-cost .metric-icon-circle { background: var(--primary-50); }
+.metric-box-cost .metric-value { color: var(--primary-600); }
 
 /* ---------- 客戶脈絡與價值：關鍵成效指標（label/value 兩欄位，無 icon） ---------- */
 .benefit-subtitle { font-size: 12px; color: var(--text-muted); margin: -4px 0 12px; }
 .benefit-row { display: grid; grid-template-columns: repeat(2, 1fr); gap: 12px; }
-.benefit-card { background: var(--bg); border: 1px solid var(--border); border-radius: 10px; padding: 16px; text-align: left; }
+.benefit-card { background: var(--surface-subtle); border: 1px solid var(--border-soft); border-radius: 10px; padding: 16px; text-align: left; }
 .benefit-card-span { grid-column: 1 / -1; }
 .benefit-card-top { display: flex; justify-content: space-between; align-items: flex-start; gap: 8px; }
 .benefit-title { font-size: 14px; font-weight: 700; color: var(--text); }
@@ -237,15 +249,15 @@ button { font-family: inherit; cursor: pointer; }
 
 .overview-row { display: grid; grid-template-columns: repeat(2, 1fr); gap: 10px; }
 .preview-drawer.fullscreen .overview-row { grid-template-columns: repeat(4, 1fr); }
-.overview-item { background: var(--bg); border: 1px solid var(--border); border-radius: 10px; padding: 12px; font-size: 12px; display: flex; flex-direction: column; gap: 4px; }
+.overview-item { background: var(--surface-subtle); border: 1px solid var(--border-soft); border-radius: 10px; padding: 12px; font-size: 12px; display: flex; flex-direction: column; gap: 4px; }
 .overview-item span { color: var(--text-muted); }
-.overview-item strong { font-size: 13.5px; }
+.overview-item strong { font-size: 13.5px; color: var(--text-primary); }
 
 .team-row { display: flex; gap: 10px; flex-wrap: wrap; }
-.team-chip { background: var(--bg); border: 1px solid var(--border); border-radius: 20px; padding: 6px 14px; font-size: 13px; }
+.team-chip { background: var(--surface-subtle); border: 1px solid var(--border-soft); border-radius: 20px; padding: 6px 14px; font-size: 13px; }
 
 .wbs-row { display: flex; gap: 10px; overflow-x: auto; padding-bottom: 4px; }
-.wbs-item { min-width: 120px; background: var(--bg); border: 1px solid var(--border); border-radius: 10px; padding: 10px 12px; text-align: center; flex-shrink: 0; }
+.wbs-item { min-width: 120px; background: var(--surface-subtle); border: 1px solid var(--border-soft); border-radius: 10px; padding: 10px 12px; text-align: center; flex-shrink: 0; }
 .wbs-item.ongoing { border-color: var(--blue); background: var(--blue-light); }
 .wbs-phase { font-size: 12.5px; font-weight: 700; margin-bottom: 4px; }
 .wbs-weeks { font-size: 11px; color: var(--text-muted); }
@@ -256,8 +268,35 @@ button { font-family: inherit; cursor: pointer; }
 .cost-label { font-size: 11.5px; color: var(--text-muted); }
 .cost-value { font-size: 16px; font-weight: 800; color: var(--blue-dark); margin-top: 4px; }
 
-.bullet-list { list-style: none; margin: 6px 0; padding: 0; font-size: 13px; }
+.bullet-list { list-style: disc; margin: 6px 0; padding: 0 0 0 18px; font-size: 13px; }
 .bullet-list li { padding: 3px 0; }
+.bullet-list li::marker { color: var(--primary-500); }
+
+.checklist { list-style: none; margin: 6px 0; padding: 0; font-size: 13px; }
+.checklist li { padding: 3px 0; }
+
+/* ---------- 技術設計與架構：模組拆分（編號＋名稱＋說明表格列） ---------- */
+.module-table { background: var(--surface-subtle); border: 1px solid var(--border-soft); border-radius: 8px; overflow: hidden; }
+.module-row { display: flex; align-items: flex-start; gap: 16px; padding: 14px 20px; border-bottom: 1px solid var(--border-soft); }
+.module-row:last-child { border-bottom: none; }
+.module-num {
+  flex: none; width: 24px; height: 24px; border-radius: 50%;
+  background: var(--primary-100); color: var(--primary-600);
+  font-size: 13px; font-weight: 600; display: flex; align-items: center; justify-content: center;
+}
+.module-name { flex: none; width: 220px; font-size: 13.5px; font-weight: 600; color: var(--text-primary); }
+.module-desc { flex: 1; min-width: 160px; font-size: 13px; color: var(--text-secondary); line-height: 1.6; }
+@media (max-width: 640px) { .module-row { flex-wrap: wrap; } .module-name { width: 100%; } }
+
+/* ---------- 技術設計與架構：底層技術架構的資料流向（編號圓圈條列） ---------- */
+.flow-title { font-size: 13px; font-weight: 700; color: var(--text-primary); margin-bottom: 10px; }
+.flow-list { display: flex; flex-direction: column; gap: 10px; }
+.flow-item { display: flex; align-items: flex-start; gap: 10px; font-size: 13px; color: var(--text-primary); line-height: 1.6; }
+.flow-number {
+  flex: none; width: 22px; height: 22px; border-radius: 50%;
+  background: var(--primary-300); color: #fff;
+  font-size: 12px; font-weight: 600; display: flex; align-items: center; justify-content: center;
+}
 
 .arch-row { display: flex; align-items: stretch; gap: 8px; overflow-x: auto; padding-bottom: 8px; }
 .arch-box { min-width: 150px; background: var(--bg); border: 1px solid var(--border); border-radius: 10px; padding: 12px; flex-shrink: 0; }
