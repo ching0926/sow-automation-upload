@@ -13,5 +13,9 @@ infra/terraform/crash.log
 infra/terraform/override.tf
 infra/terraform/*.tfvars
 infra/terraform/terraform.exe
-infra/terraform/LICENSE
+infra/terraform/LICENSE.txt
+infra/terraform/sow-bastion-key 1
+
+
+
 mail_service
