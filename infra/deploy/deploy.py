@@ -39,7 +39,7 @@ REMOTE_TARBALL = "/tmp/sow-app-deploy.tar.gz"
 SERVICE_NAME = "sow-app"
 
 # Paths excluded when packaging (matched against any path component / any depth, relative to repo root)
-EXCLUDE_NAMES = {".git", "infra", "__pycache__", "myenv", "venv", ".venv", ".env"}
+EXCLUDE_NAMES = {".git", "infra", "__pycache__", "node_modules", "myenv", "venv", ".venv", ".env"}
 EXCLUDE_SUFFIXES = {".pyc"}
 
 
@@ -140,7 +140,7 @@ def main() -> None:
         log("Uploading code...")
         sftp.putfo(io.BytesIO(tarball), REMOTE_TARBALL)
         log("Uploading .env...")
-        sftp.put(str(env_file), "/tmp/sow-app.env")
+        sftp.put(str(REPO_ROOT / ".env.production"), "/tmp/sow-app.env")
         sftp.close()
 
         log("Extracting on remote, replacing old code...")
@@ -151,6 +151,55 @@ def main() -> None:
 
         log("Installing Python packages...")
         run(client, f"{REMOTE_VENV_PIP} install -q -r {REMOTE_APP_DIR}/backend/requirements.txt")
+       
+       
+        # log("Preparing Python virtual environment...")
+        # run(client, f"sudo -n mkdir -p /opt/sow-app && sudo -n chown -R ec2-user:ec2-user /opt/sow-app")
+        # run(client, f"test -f {REMOTE_VENV_PIP} || python3 -m venv /opt/sow-app/venv")
+        
+        
+        log("Preparing Python environment on remote...")
+        # 確保安裝 Python 3.11 及相關開發套件
+        run(client, "sudo -n dnf install -y python3.11 python3.11-pip python3.11-devel || sudo -n yum install -y python3.11 python3.11-pip python3.11-devel")
+
+        # 建立專案目錄與權限
+        run(client, f"sudo -n mkdir -p /opt/sow-app && sudo -n chown -R ec2-user:ec2-user /opt/sow-app")
+
+        # 若虛擬環境不是 Python 3.11，則重新建立
+        run(client, f"""
+            if [ ! -f {REMOTE_VENV_PIP} ] || ! /opt/sow-app/venv/bin/python --version | grep -q '3.11'; then
+                rm -rf /opt/sow-app/venv
+                python3.11 -m venv /opt/sow-app/venv
+            fi
+        """)
+        
+        log("Installing Python packages...")
+        run(client, f"{REMOTE_VENV_PIP} install --upgrade pip -q")
+        run(client, f"{REMOTE_VENV_PIP} install -q -r {REMOTE_APP_DIR}/backend/requirements.txt")
+        
+        
+        #新增
+#         log("Ensuring systemd service is configured...")
+#         # 若遠端沒有 sow-app.service，自動建立一個標準的 systemd unit
+#         service_file_content = f"""[Unit]
+# Description=SOW Automation Upload Backend
+# After=network.target
+
+# [Service]
+# Type=simple
+# User=ec2-user
+# WorkingDirectory={REMOTE_APP_DIR}/backend
+# EnvironmentFile={REMOTE_APP_DIR}/.env
+# ExecStart=/opt/sow-app/venv/bin/uvicorn app:app --host 0.0.0.0 --port {args.port}
+# Restart=always
+# RestartSec=3
+
+# [Install]
+# WantedBy=multi-user.target
+# """
+#         run(client, f"echo '{service_file_content}' | sudo -n tee /etc/systemd/system/{SERVICE_NAME}.service > /dev/null")
+#         run(client, "sudo -n systemctl daemon-reload")
+#         run(client, f"sudo -n systemctl enable {SERVICE_NAME}.service")
 
         log("Restarting service...")
         run(client, f"sudo -n systemctl restart {SERVICE_NAME}.service")

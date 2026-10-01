@@ -1,8 +1,11 @@
+import hashlib
+import hmac
 import json
 import os
 import urllib.error
 import urllib.parse
 import urllib.request
+from datetime import datetime
 from pathlib import Path
 
 from sqlalchemy import text
@@ -19,6 +22,14 @@ ALERT_API_BASE = os.getenv("ALERT_API_BASE", "https://api.alertsystem.sit.ecvhrm
 ALERT_CLIENT_ID = os.getenv("ALERT_CLIENT_ID")
 ALERT_CLIENT_SECRET = os.getenv("ALERT_CLIENT_SECRET")
 ALERT_EMAIL_FROM = os.getenv("ALERT_EMAIL_FROM", "institution.dx@ecloudvalley.com")
+
+# 審核連結網址用的 token（取代直接暴露 job_code），必須跟 Lambda 端（db_service.py::compute_review_token）
+# 用同一組 REVIEW_LINK_SECRET，否則算出來的 token 會對不起來。
+REVIEW_LINK_SECRET = os.getenv("REVIEW_LINK_SECRET", "")
+
+
+def compute_review_token(job_code: str) -> str:
+    return hmac.new(REVIEW_LINK_SECRET.encode(), job_code.encode(), hashlib.sha256).hexdigest()
 
 NDA_INCOMPLETE_WHERE = """
     dri_mail IS NULL OR manager_mail IS NULL
@@ -207,21 +218,21 @@ def fetch_nda_department(db: Session, job_code: str):
     return (row["dri_deptname"] if row else None) or None
 
 
-def fetch_nda_contact_email(db: Session, job_code: str):
-    """依 sow_document.job_code 對照 nda_work_station_apply.contact_id，取得負責人 email（contact 表）。"""
+def fetch_nda_contact(db: Session, job_code: str):
+    """依 sow_document.job_code 對照 nda_work_station_apply.contact_id，取得負責人 email/姓名（contact 表）。"""
     if not job_code:
         return None
     row = db.execute(
         text(
             """
-            SELECT c.email FROM nda_work_station_apply n
+            SELECT c.email, c.name FROM nda_work_station_apply n
             JOIN contact c ON c.id = n.contact_id
             WHERE n.job_code = :job_code
             """
         ),
         {"job_code": job_code},
     ).mappings().first()
-    return (row["email"] if row else None) or None
+    return dict(row) if row else None
 
 
 def _get_alert_access_token():
@@ -262,18 +273,31 @@ def notify_case_interest(db: Session, sow_id: int, customer_email: str, comment:
     ).mappings().first()
     if not doc:
         return
-    to_email = fetch_nda_contact_email(db, doc.get("job_code"))
-    if not to_email:
+    contact = fetch_nda_contact(db, doc.get("job_code"))
+    if not contact or not contact.get("email"):
         print(f"[interest-mail] sow_id={sow_id} 找不到負責人 email（job_code={doc.get('job_code')}），略過寄信")
         return
     if not ALERT_CLIENT_ID or not ALERT_CLIENT_SECRET:
         print(f"[interest-mail] sow_id={sow_id} 略過：未設定 ALERT_CLIENT_ID/ALERT_CLIENT_SECRET")
         return
     try:
-        title = derive_title(doc["file_name"])
-        subject = f"【SOW 案例知識庫】有客戶對「{title}」表示興趣"
-        body = f"客戶 email：{customer_email}<br>留言：{comment or '（無）'}<br><br>案例：{title}"
-        _send_alert_mail([to_email], subject, body)
+        job_code = doc.get("job_code")
+        title = derive_contact_item_name(doc["file_name"]) if job_code else derive_title(doc["file_name"])
+        greeting = (contact.get("name") or "").strip() or "負責團隊"
+        notified_at = datetime.now().strftime("%Y-%m-%d %H:%M")
+        subject = f"【商機通知】客戶對案例表達高度興趣 - {job_code} {title}"
+        body = (
+            f"Hi {greeting}，<br><br>"
+            f"系統已收到來自客戶的洽詢通知，詳細資訊如下：<br><br>"
+            f"客戶信箱：{customer_email}<br><br>"
+            f"感興趣案例：{job_code} {title}<br><br>"
+            f"客戶留言：{comment or '（無）'}<br><br>"
+            f"通知時間：{notified_at}<br><br>"
+            f"請於 1 個工作天內主動與客戶聯繫以利推進後續合作。<br><br>"
+            f"祝好，<br>"
+            f"SOW 案例知識庫（系統自動發送）"
+        )
+        _send_alert_mail([contact["email"]], subject, body)
     except Exception as exc:  # noqa: BLE001 - 寄信失敗不能讓客戶的興趣登記跟著失敗
         print(f"[interest-mail] sow_id={sow_id} 寄信失敗，略過：{exc!r}")
 

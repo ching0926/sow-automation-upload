@@ -1,0 +1,123 @@
+.section-title {
+  font-size: 18px;
+  font-weight: 600;
+  line-height: 1.4;
+  color: #172B4D;
+}
+
+.section-icon {
+  width: 40px;
+  height: 40px;
+
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+
+  background: #EAF2FC;
+  color: #2474D8;
+
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+
+.section-icon svg {
+  width: 20px;
+  height: 20px;
+
+  stroke: currentColor;
+  stroke-width: 1.8;
+}
+
+.content-card {
+  background: #F7F9FC;
+
+  border: 1px solid #D9E4F2;
+  border-radius: 8px;
+
+  padding: 20px 24px;
+
+  color: #172B4D;
+}
+
+.content-card li::marker {
+  color: #2474D8;
+}
+
+.bullet {
+  width: 7px;
+  height: 7px;
+
+  background: #2474D8;
+  border-radius: 50%;
+
+  flex-shrink: 0;
+}
+
+.flow-number {
+  width: 24px;
+  height: 24px;
+
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+
+  background: #6EA8E8;
+  color: #FFFFFF;
+
+  border-radius: 50%;
+
+  font-size: 13px;
+  font-weight: 600;
+  line-height: 1;
+}
+
+:root {
+  /* ========================
+     Brand / Primary
+     ======================== */
+
+  --primary-600: #1769C2;
+  --primary-500: #2474D8;
+  --primary-300: #6EA8E8;
+  --primary-100: #D9E4F2;
+  --primary-50:  #EAF2FC;
+
+
+  /* ========================
+     Text
+     ======================== */
+
+  --text-primary: #172B4D;
+  --text-secondary: #5E6C84;
+  --text-muted: #7A869A;
+
+
+  /* ========================
+     Surface
+     ======================== */
+
+  --surface: #FFFFFF;
+  --surface-subtle: #F7F9FC;
+  --border: #D9E4F2;
+
+
+  /* ========================
+     Typography
+     ======================== */
+
+  --section-title-size: 18px;
+  --section-title-weight: 600;
+
+  --body-size: 14px;
+  --body-weight: 400;
+
+  --small-size: 13px;
+
+
+  /* ========================
+     Radius
+     ======================== */
+
+  --radius-card: 8px;
+  --radius-circle: 50%;
+}

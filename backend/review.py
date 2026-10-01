@@ -148,13 +148,14 @@ def _to_snake_content(body: DraftSaveIn):
     return customer_context, project_planning, technical_design
 
 
-def _resolve_sow_id(db: Session, job_code: str) -> int:
-    """把審核連結網址上的 job_code 解析成內部 sow_document.id；查不到就 404。"""
+def _resolve_sow_id(db: Session, token: str) -> int:
+    """把審核連結網址上的 token（HMAC-SHA256(REVIEW_LINK_SECRET, job_code)）解析成內部
+    sow_document.id；查不到就 404。網址上不再直接暴露 job_code。"""
     row = db.execute(
         text(
-            "SELECT id FROM sow_document WHERE job_code = :job_code AND is_latest = true ORDER BY id DESC LIMIT 1"
+            "SELECT id FROM sow_document WHERE review_token = :token AND is_latest = true ORDER BY id DESC LIMIT 1"
         ),
-        {"job_code": job_code},
+        {"token": token},
     ).mappings().first()
     if not row:
         raise HTTPException(status_code=404, detail="Case not found")
@@ -367,18 +368,18 @@ def build_review_case(db: Session, sow_id: int):
 
 # ---------- routes ----------
 
-@router.get("/cases/{job_code}")
-def get_review_case(job_code: str, db: Session = Depends(get_db)):
-    sow_id = _resolve_sow_id(db, job_code)
+@router.get("/cases/{token}")
+def get_review_case(token: str, db: Session = Depends(get_db)):
+    sow_id = _resolve_sow_id(db, token)
     case = build_review_case(db, sow_id)
     if case is None:
         raise HTTPException(status_code=404, detail="Case not found")
     return case
 
 
-@router.put("/cases/{job_code}/draft")
-def save_draft(job_code: str, body: DraftSaveIn, db: Session = Depends(get_db)):
-    sow_id = _resolve_sow_id(db, job_code)
+@router.put("/cases/{token}/draft")
+def save_draft(token: str, body: DraftSaveIn, db: Session = Depends(get_db)):
+    sow_id = _resolve_sow_id(db, token)
     doc = _fetch_doc_status(db, sow_id)
     if not doc:
         raise HTTPException(status_code=404, detail="Case not found")
@@ -413,9 +414,9 @@ def save_draft(job_code: str, body: DraftSaveIn, db: Session = Depends(get_db)):
     return build_review_case(db, sow_id)
 
 
-@router.post("/cases/{job_code}/submit")
-def submit_for_review(job_code: str, db: Session = Depends(get_db)):
-    sow_id = _resolve_sow_id(db, job_code)
+@router.post("/cases/{token}/submit")
+def submit_for_review(token: str, db: Session = Depends(get_db)):
+    sow_id = _resolve_sow_id(db, token)
     reviewer = _resolve_reviewer_email(db, sow_id, "DRI")
     result = db.execute(
         text(
@@ -434,9 +435,9 @@ def submit_for_review(job_code: str, db: Session = Depends(get_db)):
     return build_review_case(db, sow_id)
 
 
-@router.post("/cases/{job_code}/comments")
-def add_comment(job_code: str, body: CommentIn, db: Session = Depends(get_db)):
-    sow_id = _resolve_sow_id(db, job_code)
+@router.post("/cases/{token}/comments")
+def add_comment(token: str, body: CommentIn, db: Session = Depends(get_db)):
+    sow_id = _resolve_sow_id(db, token)
     doc = _fetch_doc_status(db, sow_id)
     if not doc:
         raise HTTPException(status_code=404, detail="Case not found")
@@ -486,9 +487,9 @@ def add_comment(job_code: str, body: CommentIn, db: Session = Depends(get_db)):
     return build_review_case(db, sow_id)
 
 
-@router.put("/cases/{job_code}/comments/{comment_id}")
-def update_comment(job_code: str, comment_id: int, body: CommentUpdateIn, db: Session = Depends(get_db)):
-    sow_id = _resolve_sow_id(db, job_code)
+@router.put("/cases/{token}/comments/{comment_id}")
+def update_comment(token: str, comment_id: int, body: CommentUpdateIn, db: Session = Depends(get_db)):
+    sow_id = _resolve_sow_id(db, token)
     text_body = body.body.strip()
     if not text_body:
         raise HTTPException(status_code=422, detail="留言內容不可為空")
@@ -512,9 +513,9 @@ def update_comment(job_code: str, comment_id: int, body: CommentUpdateIn, db: Se
     return build_review_case(db, sow_id)
 
 
-@router.delete("/cases/{job_code}/comments/{comment_id}")
-def delete_comment(job_code: str, comment_id: int, body: CommentDeleteIn, db: Session = Depends(get_db)):
-    sow_id = _resolve_sow_id(db, job_code)
+@router.delete("/cases/{token}/comments/{comment_id}")
+def delete_comment(token: str, comment_id: int, body: CommentDeleteIn, db: Session = Depends(get_db)):
+    sow_id = _resolve_sow_id(db, token)
     row = db.execute(
         text("SELECT id, author_role FROM sow_review_comment WHERE id = :id AND sow_id = :sow_id"),
         {"id": comment_id, "sow_id": sow_id},
@@ -529,9 +530,9 @@ def delete_comment(job_code: str, comment_id: int, body: CommentDeleteIn, db: Se
     return build_review_case(db, sow_id)
 
 
-@router.post("/cases/{job_code}/return")
-def return_to_dri(job_code: str, body: ReturnIn, db: Session = Depends(get_db)):
-    sow_id = _resolve_sow_id(db, job_code)
+@router.post("/cases/{token}/return")
+def return_to_dri(token: str, body: ReturnIn, db: Session = Depends(get_db)):
+    sow_id = _resolve_sow_id(db, token)
     reviewer = _resolve_reviewer_email(db, sow_id, "MANAGER")
     if body.comment:
         db.execute(
@@ -572,9 +573,9 @@ def return_to_dri(job_code: str, body: ReturnIn, db: Session = Depends(get_db)):
     return build_review_case(db, sow_id)
 
 
-@router.post("/cases/{job_code}/approve")
-def approve_and_publish(job_code: str, db: Session = Depends(get_db)):
-    sow_id = _resolve_sow_id(db, job_code)
+@router.post("/cases/{token}/approve")
+def approve_and_publish(token: str, db: Session = Depends(get_db)):
+    sow_id = _resolve_sow_id(db, token)
     doc = _fetch_doc_status(db, sow_id)
     if not doc:
         raise HTTPException(status_code=404, detail="Case not found")
