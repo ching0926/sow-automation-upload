@@ -269,8 +269,8 @@ function sectionsTabB(c) {
     {
       id: 'sec-dri', titleKey: 'b_dri', body: `
       <div class="overview-row">
-        <div class="overview-item">👤 <span>${t(state.lang, 'b_dri')}</span><strong>${b.owner}</strong></div>
-        <div class="overview-item">📅 <span>${t(state.lang, 'b_period')}</span><strong>${b.period}</strong></div>
+        <div class="overview-item"><span>${t(state.lang, 'b_dri')}</span><strong>${b.owner}</strong></div>
+        <div class="overview-item"><span>${t(state.lang, 'b_period')}</span><strong>${b.period}</strong></div>
         ${statusRow}
       </div>`,
     },
@@ -288,7 +288,7 @@ function sectionsTabB(c) {
     {
       id: 'sec-manday', titleKey: 'b_manday', body: `
       <div class="metric-box metric-box-manday">
-        <div class="metric-icon-circle">🗓️</div>
+        <div class="metric-icon-circle"><img src="img/calendar.png" alt="" class="metric-icon-img" /></div>
         <div class="metric-divider"></div>
         <div class="metric-content">
           <div class="metric-caption">${t(state.lang, 'b_total_label')}</div>
@@ -299,7 +299,7 @@ function sectionsTabB(c) {
     {
       id: 'sec-projcost', titleKey: 'b_projcost', body: `
       <div class="metric-box metric-box-cost">
-        <div class="metric-icon-circle">💰</div>
+        <div class="metric-icon-circle"><img src="img/dollar-coin.png" alt="" class="metric-icon-img" /></div>
         <div class="metric-divider"></div>
         <div class="metric-content">
           <div class="metric-caption">${t(state.lang, 'b_total_label')}</div>
@@ -324,27 +324,69 @@ function sectionsTabB(c) {
   }
   sections.push({
     id: 'sec-closing', titleKey: 'b_closing', body: `
-      <ul class="bullet-list">${(b.deliverables || []).map(d => `<li>✔ ${L('deliverable', d, state.lang)}</li>`).join('')}</ul>`,
+      <ul class="checklist">${(b.deliverables || []).map(d => `<li>✔ ${L('deliverable', d, state.lang)}</li>`).join('')}</ul>`,
   });
   return sections;
+}
+
+function parseFlowSteps(text) {
+  if (!text) return null;
+  const cleaned = text.replace(/^資料流向[：:]\s*/, '');
+
+  // 格式一：內嵌編號「(1) ...；(2) ...」
+  const numbered = [...cleaned.matchAll(/\((\d+)\)\s*([^()]*?)(?=；?\s*\(\d+\)|；?\s*$)/g)];
+  if (numbered.length >= 2) {
+    const steps = numbered.map(m => ({ num: m[1], text: m[2].replace(/[；;]\s*$/, '').trim() })).filter(s => s.text);
+    if (steps.length >= 2) return steps;
+  }
+
+  // 格式二：箭頭串接流程「A → B → C」，沒有內嵌編號時改用箭頭分段、自動補編號
+  if (cleaned.includes('→')) {
+    const arrowSteps = cleaned.split('→').map(s => s.trim()).filter(Boolean);
+    if (arrowSteps.length >= 2) {
+      return arrowSteps.map((t, i) => ({ num: String(i + 1), text: t }));
+    }
+  }
+
+  // 格式三：「標籤：說明。標籤：說明。」重複段落（例如「入站流量：...。出站流量：...。」），
+  // 標籤限定 2-8 個中英數字元、不含標點，避免誤吃一般敘述句裡剛好出現的冒號
+  const labeled = [...cleaned.matchAll(/([一-龥A-Za-z0-9]{2,8})：([\s\S]*?。)/g)];
+  if (labeled.length >= 2) {
+    return labeled.map((m, i) => ({ num: String(i + 1), text: `${m[1]}：${m[2].trim()}` }));
+  }
+
+  return null; // 格式不符預期就不硬解析，維持原本整段文字呈現
 }
 
 function sectionsTabC(c) {
   const cc = c.detail.C;
   const ua = cc.underlyingArchitecture || {};
+  const flowSteps = parseFlowSteps(ua.dataFlow);
+  const dataFlowHtml = flowSteps
+    ? `<div class="section-card" style="margin-top:8px">
+        <div class="flow-title">${t(state.lang, 'c_arch_dataflow')}</div>
+        <div class="flow-list">${flowSteps.map(s => `
+          <div class="flow-item"><span class="flow-number">${s.num}</span><span>${s.text}</span></div>`).join('')}</div>
+      </div>`
+    : `<div class="section-card" style="margin-top:8px"><p><strong>${t(state.lang, 'c_arch_dataflow')}：</strong>${ua.dataFlow || ''}</p></div>`;
   return [
     {
       id: 'sec-corefunc', titleKey: 'c_corefunctions', body: `
-      <ul class="bullet-list">${cc.coreFunctions.map(x => `<li>• ${x}</li>`).join('')}</ul>`,
+      <div class="section-card"><ul class="bullet-list">${cc.coreFunctions.map(x => `<li>${x}</li>`).join('')}</ul></div>`,
     },
     {
       id: 'sec-modules', titleKey: 'c_modules', body: `
-      <ul class="bullet-list">${(cc.modules || []).map(m => `<li>• <strong>${m.moduleName}</strong>${m.responsibility ? `：${m.responsibility}` : ''}</li>`).join('')}</ul>`,
+      <div class="module-table">${(cc.modules || []).map((m, i) => `
+        <div class="module-row">
+          <div class="module-num">${i + 1}</div>
+          <div class="module-name">${m.moduleName}</div>
+          <div class="module-desc">${m.responsibility || ''}</div>
+        </div>`).join('')}</div>`,
     },
     {
       id: 'sec-techarch', titleKey: 'c_techarch', body: `
       <div class="section-card"><p><strong>${t(state.lang, 'c_arch_summary')}：</strong>${ua.summary || ''}</p></div>
-      <div class="section-card" style="margin-top:8px"><p><strong>${t(state.lang, 'c_arch_dataflow')}：</strong>${ua.dataFlow || ''}</p></div>
+      ${dataFlowHtml}
       ${ua.deploymentEnvironment ? `<div class="section-card" style="margin-top:8px"><p><strong>${t(state.lang, 'c_arch_deploy')}：</strong>${ua.deploymentEnvironment}</p></div>` : ''}`,
     },
     {
