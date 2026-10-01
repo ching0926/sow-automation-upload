@@ -14,7 +14,8 @@ infra/terraform/override.tf
 infra/terraform/*.tfvars
 infra/terraform/terraform.exe
 infra/terraform/LICENSE.txt
-infra/terraform/sow-bastion-key 1
+infra/terraform/sow-bastion-key 1.txt
+
 
 
 
