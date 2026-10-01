@@ -13,6 +13,5 @@ infra/terraform/crash.log
 infra/terraform/override.tf
 infra/terraform/*.tfvars
 infra/terraform/terraform.exe
-
-
+infra/terraform/LICENSE
 mail_service
